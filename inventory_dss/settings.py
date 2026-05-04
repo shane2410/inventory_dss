@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -82,9 +84,21 @@ WSGI_APPLICATION = 'inventory_dss.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# ✅ Database: Use SQLite for free Render (no database charges)
-# For MySQL: set USE_MYSQL=1
-if os.getenv('USE_MYSQL') == '1':
+# Database priority:
+# 1) DATABASE_URL (PostgreSQL/other managed DB)
+# 2) USE_MYSQL=1
+# 3) SQLite fallback for local development
+database_url = os.getenv('DATABASE_URL')
+
+if database_url:
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=database_url,
+            conn_max_age=600,
+            ssl_require=not DEBUG,
+        )
+    }
+elif os.getenv('USE_MYSQL') == '1':
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.mysql',
