@@ -1,0 +1,21 @@
+{
+  "name": "inventory_dss-main",
+  "version": "1.0.0",
+  "description": "Minimal instructions to set up and run the Django inventory project locally.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shane2410/inventory_dss.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/shane2410/inventory_dss/issues"
+  },
+  "homepage": "https://github.com/shane2410/inventory_dss#readme"
+}
