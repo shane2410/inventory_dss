@@ -11,5 +11,8 @@ scipy>=1.10
 # Production / Render dependencies
 gunicorn>=20.1.0
 whitenoise>=6.0
-dj-database-url>=1.0
-psycopg2-binary>=2.9
+
+# Optional database packages (uncomment as needed)
+# dj-database-url>=1.0  # For PostgreSQL on Render paid tier
+# psycopg2-binary>=2.9  # PostgreSQL driver
+# mysqlclient>=2.1      # MySQL driver (if USE_MYSQL=1)
