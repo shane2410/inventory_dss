@@ -4,7 +4,7 @@ numpy>=1.25
 openpyxl>=3.0
 statsmodels>=0.14
 scipy>=1.10
-
+pymongo[srv]==4.6.0
 # Optional (only needed if using MySQL backend)
 # mysqlclient>=2.1
 
