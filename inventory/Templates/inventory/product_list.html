@@ -1,0 +1,103 @@
+﻿{% extends 'inventory/base.html' %}
+
+{% block content %}
+<div class="page-hero">
+  <div>
+    <h1 class="page-title">Phân tích tồn kho</h1>
+    <p class="page-subtitle">Theo dõi tồn kho và hỗ trợ quyết định đặt hàng.</p>
+  </div>
+  <div class="hero-badge">Mô phỏng DSS</div>
+</div>
+
+<div class="content-grid">
+  <div class="panel">
+    <h2 class="panel-title">Chọn sản phẩm</h2>
+    <p class="panel-subtitle">
+      Hệ thống sẽ tính toán mức tồn kho đề xuất, điểm đặt hàng lại và lượng đặt
+      hàng tối ưu.
+    </p>
+    <form method="POST" class="control-form">
+      {% csrf_token %}
+      <div class="field">
+        <label>Sản phẩm</label>
+        <select name="product_id" class="searchable">
+          <option value="">-- Chọn sản phẩm --</option>
+          {% for p in products %}
+          <option value="{{ p.id }}" {% if selected_product and p.id == selected_product.id %}selected{% endif %}>
+            {{ p.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn-primary">Chạy ra kết quả</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2 class="panel-title">Tóm tắt kết quả</h2>
+    <p class="panel-subtitle">
+      Sau khi chọn sản phẩm, bảng kết quả bên dưới sẽ hiển thị các thông số DSS
+      theo từng nguyên vật liệu.
+    </p>
+    <div class="stats-grid" style="margin-bottom: 0">
+      <div class="stat-card stat-orange">
+        <h3>Số sản phẩm</h3>
+        <p>{{ products|length }}</p>
+      </div>
+      <div class="stat-card stat-purple">
+        <h3>Dòng kết quả</h3>
+        <p>{{ results|length }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="table-card">
+  <div class="table-head">
+    <div>
+      <h2>Kết quả DSS{% if selected_product %} cho {{ selected_product.name }}{% endif %}</h2>
+      <p>Thông tin sắp xếp theo hướng dễ quyết định đặt hàng nhanh và dễ đọc.</p>
+    </div>
+    {% if selected_product %}
+    <div class="info-chip">{{ selected_product.name }}</div>
+    {% endif %}
+  </div>
+  <div class="table-scroll">
+    <table>
+      <tr>
+        <th class="stt-col">STT</th>
+        <th>ID</th>
+        <th>Nguyên vật liệu</th>
+        <th>Dự báo</th>
+        <th>Độ lệch chuẩn</th>
+        <th>IP</th>
+        <th>ROP</th>
+        <th>Trạng thái</th>
+      </tr>
+
+      {% for r in results %}
+      <tr>
+        <td class="stt-col">{{ forloop.counter }}</td>
+        <td>{{ r.material_id }}</td>
+        <td>{{ r.material }}</td>
+        <td>{{ r.mean }}</td>
+        <td>{{ r.std }}</td>
+        <td>{{ r.ip }}</td>
+        <td>{{ r.rop }}</td>
+        <td>
+          {% if r.ip > r.rop %}
+          <span style="color: green; font-weight: bold">Ổn định</span>
+          {% else %}
+          <span style="color: red; font-weight: bold">Đặt hàng</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="8" class="empty-state">Chọn sản phẩm và bấm "Chạy DSS" để xem kết quả.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,53 @@
+<div class="dashboard-cards">
+
+    <div class="card">
+        <h3>Tổng nguyên vật liệu</h3>
+        <p>{{ total_materials }}</p>
+    </div>
+
+    <div class="card">
+        <h3>Tổng tồn kho</h3>
+        <p>{{ total_inventory }}</p>
+    </div>
+
+    <div class="card">
+        <h3>Cảnh báo đặt hàng</h3>
+        <p>{{ low_stock_count }}</p>
+    </div>
+
+    <div class="card">
+        <h3>Tổng giao dịch</h3>
+        <p>{{ total_transactions }}</p>
+    </div>
+
+</div>
+
+<style>
+.dashboard-cards {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.card {
+    flex: 1;
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    text-align: center;
+}
+
+.card h3 {
+    margin: 0;
+    font-size: 14px;
+    color: #888;
+}
+
+.card p {
+    font-size: 26px;
+    font-weight: bold;
+    margin-top: 10px;
+    color: #2c3e50;
+}
+</style>

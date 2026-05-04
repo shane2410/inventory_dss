@@ -1,0 +1,103 @@
+{% extends 'inventory/base.html' %} {% block content %}
+<div class="page-hero">
+  <div>
+    <h1 class="page-title">Nguyên vật liệu</h1>
+  </div>
+  <div class="hero-badge">Quản lý vật tư</div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card stat-blue">
+    <h3>Tổng dòng vật tư</h3>
+    <p>{{ materials|length }}</p>
+  </div>
+  <div class="stat-card stat-green">
+    <h3>Dữ liệu hiện có</h3>
+    <p>100%</p>
+  </div>
+</div>
+
+<div class="panel">
+  <h2 class="panel-title">Tìm kiếm nhanh</h2>
+  <input
+    type="text"
+    id="searchInput"
+    class="search-box"
+    placeholder="Tìm nguyên vật liệu..."
+  />
+</div>
+
+<div class="table-card">
+  <div class="table-head">
+    <div>
+      <h2>Danh sách nguyên vật liệu</h2>
+    </div>
+    <div class="info-chip">Tổng {{ materials|length }} nguyên vật liệu</div>
+  </div>
+  <div class="table-scroll">
+    <table id="materialTable">
+      <tr>
+        <th class="stt-col">STT</th>
+        <th>ID</th>
+        <th>Tên</th>
+        <th>Tồn kho</th>
+        <th>Đang đặt</th>
+        <th>IP</th>
+        <th>Lead time</th>
+        <th>Chi phí lưu kho</th>
+        <th>Chi phí đặt hàng</th>
+        <th>Đơn giá</th>
+      </tr>
+
+      {% for m in materials %}
+      <tr>
+        <td class="stt-col">{{ forloop.counter }}</td>
+        <td>{{ m.material_id }}</td>
+        <td>{{ m.name }}</td>
+        <td>{{ m.on_hand }}</td>
+        <td>{{ m.on_order }}</td>
+        <td class="ip-cell">{{ m.inventory_position }}</td>
+        <td>{{ m.leadtime }}</td>
+        <td>{{ m.holding_cost|floatformat:1 }}</td>
+        <td>{{ m.ordering_cost }}</td>
+        <td>{{ m.price_cost }}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="10" class="empty-state">
+          Chưa có dữ liệu nguyên vật liệu.
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const searchInput = document.getElementById("searchInput");
+    if (!searchInput) {
+      return;
+    }
+
+    searchInput.addEventListener("keyup", function () {
+      const filter = this.value.toLowerCase();
+      const rows = document.querySelectorAll("#materialTable tr");
+
+      rows.forEach((row, index) => {
+        if (index === 0) {
+          return;
+        }
+
+        const nameCell = row.cells[2];
+        if (!nameCell) {
+          return;
+        }
+
+        const name = nameCell.innerText.toLowerCase();
+        row.style.display = name.includes(filter) ? "" : "none";
+      });
+    });
+  });
+</script>
+{% endblock %}

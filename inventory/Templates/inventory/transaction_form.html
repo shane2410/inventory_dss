@@ -1,0 +1,37 @@
+{% extends 'inventory/base.html' %}
+
+{% block content %}
+
+<h1>Thêm giao dịch kho</h1>
+
+<form method="POST" style="background:white; padding:20px; border-radius:10px; max-width:400px;">
+    {% csrf_token %}
+
+    <label>Nguyên vật liệu</label><br>
+    <select name="material" required style="width:100%; padding:8px; margin-bottom:10px;">
+        {% for m in materials %}
+            <option value="{{ m.id }}">{{ m.name }}</option>
+        {% endfor %}
+    </select>
+
+    <label>Số lượng</label><br>
+    <input type="number" name="quantity" required
+           style="width:100%; padding:8px; margin-bottom:10px;">
+
+    <label>Loại giao dịch</label><br>
+    <select name="transaction_type" required
+            style="width:100%; padding:8px; margin-bottom:15px;">
+        <option value="IN">Nhập kho</option>
+        <option value="OUT">Xuất kho</option>
+    </select>
+
+    <button type="submit"
+            style="padding:10px 15px; background:#4CAF50; color:white; border:none; border-radius:6px;">
+        Lưu
+    </button>
+
+    <a href="{% url 'transaction-list' %}"
+       style="margin-left:10px; text-decoration:none;">Hủy</a>
+</form>
+
+{% endblock %}

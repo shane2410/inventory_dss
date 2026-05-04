@@ -1,0 +1,52 @@
+﻿{% extends 'inventory/base.html' %} {% block content %}
+
+<h1>Quản lý giao dịch kho</h1>
+
+<div style="margin-bottom: 20px">
+  <a
+    href="{% url 'transaction-create' %}"
+    style="
+      padding: 10px 15px;
+      background: #4caf50;
+      color: white;
+      border-radius: 6px;
+      text-decoration: none;
+    "
+  >
+    + Thêm giao dịch
+  </a>
+</div>
+
+<table>
+  <tr>
+    <th class="stt-col">STT</th>
+    <th>ID</th>
+    <th>Nguyên vật liệu</th>
+    <th>Số lượng</th>
+    <th>Loại</th>
+    <th>Ngày</th>
+  </tr>
+
+  {% for t in transactions %}
+  <tr>
+    <td class="stt-col">{{ forloop.counter }}</td>
+    <td>{{ t.material.source_id|default:t.material.id }}</td>
+    <td>{{ t.material.name }}</td>
+    <td>{{ t.quantity }}</td>
+    <td>
+      {% if t.transaction_type == 'IN' %}
+      <span style="color: green; font-weight: bold">Nhập</span>
+      {% else %}
+      <span style="color: red; font-weight: bold">Xuất</span>
+      {% endif %}
+    </td>
+    <td>{{ t.date }}</td>
+  </tr>
+  {% empty %}
+  <tr>
+    <td colspan="6">Chưa có giao dịch nào</td>
+  </tr>
+  {% endfor %}
+</table>
+
+{% endblock %}

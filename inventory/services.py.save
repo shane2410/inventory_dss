@@ -1,0 +1,276 @@
+import pandas as pd
+import numpy as np
+from inventory.models import SalesData, BOM, Material
+
+
+# =========================
+# 1. FORECAST (CÓ XỬ LÝ DATA)
+# =========================
+def forecast_product(product_id):
+    sales = SalesData.objects.filter(product_id=product_id).values('date', 'quantity')
+    df = pd.DataFrame(list(sales))
+
+    if df.empty or len(df) < 5:
+        return 0, 0, [0] * 7
+
+    # ===== CLEAN =====
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values('date')
+    df = df[df['quantity'] >= 0]
+
+    # ===== GROUP =====
+    df = df.groupby('date')['quantity'].sum().reset_index()
+
+    # ===== FILL MISSING DATE =====
+    full_range = pd.date_range(start=df['date'].min(), end=df['date'].max(), freq='D')
+    df = df.set_index('date').reindex(full_range, fill_value=0)
+    df.index.name = 'date'
+
+    # ===== OUTLIER =====
+    q1 = df['quantity'].quantile(0.25)
+    q3 = df['quantity'].quantile(0.75)
+    iqr = q3 - q1
+
+    lower = q1 - 1.5 * iqr
+    upper = q3 + 1.5 * iqr
+
+    df['quantity'] = df['quantity'].clip(lower=lower, upper=upper)
+
+    # ===== SMOOTH =====
+    df['quantity_smooth'] = df['quantity'].rolling(window=3, min_periods=1).mean()
+
+    # ✅ QUAN TRỌNG: đảm bảo series là float + index chuẩn
+    series = df['quantity_smooth'].astype(float)
+
+    # ===== FORECAST =====
+    try:
+        from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+        model = ExponentialSmoothing(
+            series,
+            trend='add',
+            seasonal=None,
+            initialization_method="estimated"
+        )
+
+        fit = model.fit(optimized=True)
+
+        forecast = fit.forecast(7)
+
+        mean = forecast.mean()
+        std = series.std()
+
+        forecast_list = forecast.tolist()
+
+    except Exception as e:
+        print("Forecast error:", e)
+
+        mean = series.mean()
+        std = series.std(ddof=1)
+        forecast_list = [mean] * 7  # 🔥 phải ở đây
+
+    if np.isnan(std) or std < 0:
+        std = 0
+
+    if np.isnan(std):
+        std = 0
+    # ===== CALCULATE ERROR =====
+    actual = series[-7:]  # dữ liệu thật 7 ngày gần nhất
+
+    if len(actual) == len(forecast):
+        mae = np.mean(np.abs(actual.values - forecast.values))
+        rmse = np.sqrt(np.mean((actual.values - forecast.values) ** 2))
+
+        # tránh chia 0
+        mape = np.mean(
+            np.abs((actual.values - forecast.values) / np.maximum(actual.values, 1))
+        ) * 100
+    else:
+        mae, rmse, mape = 0, 0, 0
+
+    return mean, std, forecast_list, mae, rmse, mape
+
+
+# =========================
+# 3. INVENTORY ANALYSIS
+# =========================
+def inventory_analysis(material, mean, std):
+
+    ip = material.on_hand + material.on_order
+
+    L = max(int(material.leadtime), 1)
+
+    z = 1.65
+
+    # Safety Stock
+    ss = z * std * np.sqrt(L)
+
+    # ✅ FIX LỖI Ở ĐÂY
+    demand_L = mean * L   # ❌ KHÔNG dùng forecast list nữa
+
+    rop = demand_L + ss
+
+    action = "ORDER" if ip < rop else "OK"
+
+    return {
+        "ip": ip,
+        "ss": round(ss, 2),
+        "rop": round(rop, 2),
+        "action": action
+    }
+
+# =========================
+# =========================
+# 4. COST + GRID SEARCH (FIXED)
+# =========================
+def total_cost(material, demand, S, ip, ss):
+    if demand <= 0:
+        return 0
+
+    h = material.holding_cost
+    K = material.ordering_cost
+    p = material.price_cost
+
+    Q = max(S - ip, 1)
+
+    # Ordering cost
+    ordering_cost = K * (demand / Q)
+
+    # 🔥 FIX QUAN TRỌNG: có safety stock
+    avg_inventory = ss + Q / 2
+
+    holding_cost = h * avg_inventory
+
+    purchasing_cost = p * demand
+
+    return ordering_cost + holding_cost + purchasing_cost
+
+
+def optimize_order_quantity(material, demand, ip, rop, ss):
+
+    best_S = None
+    min_cost = float('inf')
+
+    # ===== search từ ROP trở lên =====
+    start = int(max(rop, ip))
+    end = int(start + max(300, demand * 5))
+
+    for S in range(start, end):
+
+        Q = S - ip
+        if Q <= 0:
+            continue
+
+        cost = total_cost(material, demand, S, ip, ss)
+
+        if cost < min_cost:
+            min_cost = cost
+            best_S = S
+
+    # fallback
+    if best_S is None:
+        best_S = rop
+
+    order_Q = max(best_S - ip, 0)
+
+    return round(best_S, 2), round(order_Q, 2), round(min_cost, 2)
+
+# =========================
+# 5. ABC CLASSIFICATION
+# =========================
+def abc_classification(material_list):
+    data = []
+
+    for item in material_list:
+        value = item['demand'] * item['material'].price_cost
+
+        data.append({
+            "material": item['material'],
+            "value": value
+        })
+
+    df = pd.DataFrame(data)
+
+    if df.empty:
+        return {}
+
+    df = df.sort_values(by='value', ascending=False)
+
+    total = df['value'].sum()
+    if total == 0:
+        return {}
+
+    df['cum_ratio'] = df['value'].cumsum() / total
+
+    result = {}
+
+    for _, row in df.iterrows():
+        if row['cum_ratio'] <= 0.8:
+            category = 'A'
+        elif row['cum_ratio'] <= 0.95:
+            category = 'B'
+        else:
+            category = 'C'
+
+        result[row['material'].id] = category
+
+    return result
+
+
+# =========================
+def run_dss(product_id):
+    from .models import BOM, Product
+
+    product = Product.objects.get(id=product_id)
+
+    results = []
+
+    boms = BOM.objects.filter(product=product)
+
+    if not boms.exists():
+        print("NO BOM FOUND")
+        return results
+
+    # forecast 1 lần
+    mean, std, forecast_7,_,_,_ = forecast_product(product_id)
+
+    print("FORECAST:", mean, std)
+
+    for bom in boms:
+        material = bom.material
+        # 🔥 convert sang demand của material
+        material_mean = mean * bom.quantity_per_unit
+        material_std = std * bom.quantity_per_unit
+
+        inv = inventory_analysis(material, material_mean, material_std)
+
+        ip = inv['ip']
+        rop = inv['rop']
+        ss = inv['ss']
+
+        demand = material_mean
+
+        best_S, order_Q, min_cost = optimize_order_quantity(
+            material,
+            demand,
+            ip,
+            rop,
+            ss  # 👈 thêm dòng này
+        )
+
+        results.append({
+            "material": material.name,
+            "mean": round(material_mean, 2),  # ✅ đúng
+            "std": round(material_std, 2),
+            "ip": round(ip, 2),
+            "rop": round(rop, 2),
+            "q": round(order_Q, 2),
+            "ss": round(ss, 2),
+            "s": round(best_S, 2),
+            "cost": round(min_cost, 2),
+        })
+
+    print("RESULT:", results)
+
+    return results
+import pandas as pd

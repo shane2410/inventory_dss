@@ -1,0 +1,25 @@
+{% extends 'inventory/base.html' %}
+
+{% block content %}
+<div class="page-hero">
+  <div>
+    <h1 class="page-title">Không có quyền truy cập</h1>
+    <p class="page-subtitle">
+      {{ error_message|default:'Bạn chưa được cấp quyền truy cập trang web này.' }}
+    </p>
+  </div>
+  <div class="hero-badge">
+    {{ current_user_role_label|default:'Khác' }}
+  </div>
+</div>
+
+<div class="panel" style="max-width: 760px;">
+  <h2 class="panel-title">Truy cập bị từ chối</h2>
+  <p class="panel-subtitle">
+    Nếu bạn nghĩ đây là nhầm lẫn, hãy liên hệ quản trị viên để được cấp quyền phù hợp.
+  </p>
+  <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top: 20px;">
+    <a href="{{ back_url|default:'/' }}" class="btn-primary" style="text-decoration:none; display:inline-flex; align-items:center;">Quay lại</a>
+  </div>
+</div>
+{% endblock %}

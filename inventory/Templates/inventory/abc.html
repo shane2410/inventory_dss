@@ -1,0 +1,213 @@
+{% extends 'inventory/base.html' %} {% block content %}
+<div class="page-hero">
+  <div>
+    <h1 class="page-title">Phân tích ABC</h1>
+  </div>
+  <div class="hero-badge">Phân loại ưu tiên</div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card stat-orange">
+    <h3>Nhóm A</h3>
+    <p>{{ abc_total.A }}</p>
+  </div>
+  <div class="stat-card stat-blue">
+    <h3>Nhóm B</h3>
+    <p>{{ abc_total.B }}</p>
+  </div>
+  <div class="stat-card stat-green">
+    <h3>Nhóm C</h3>
+    <p>{{ abc_total.C }}</p>
+  </div>
+</div>
+
+<div
+  class="content-grid"
+  style="grid-template-columns: minmax(320px, 1.25fr) minmax(320px, 0.95fr)"
+>
+  <div class="panel">
+    <h2 class="panel-title">Bộ lọc phân tích</h2>
+    <p class="panel-subtitle">
+      Chọn sản phẩm để xem ABC theo BOM, hoặc lọc theo nhóm A/B/C để thu hẹp
+      danh sách toàn hệ thống.
+    </p>
+    <form method="GET" class="control-form">
+      <div class="field">
+        <label>Sản phẩm</label>
+        <select name="product_id" class="searchable">
+          <option value="">-- Chọn sản phẩm --</option>
+          {% for p in products %}
+          <option value="{{ p.id }}" {% if selected_product and p.id == selected_product.id %}selected{% endif %}>
+            {{ p.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="control-row">
+        <button type="submit" class="btn-primary">Chạy phân tích</button>
+      </div>
+      <div class="field">
+        <label>Nhóm ABC</label>
+        <select name="abc" class="input">
+          <option value="">Tất cả</option>
+          <option value="A" {% if selected_abc == "A" %}selected{% endif %}>A</option>
+          <option value="B" {% if selected_abc == "B" %}selected{% endif %}>B</option>
+          <option value="C" {% if selected_abc == "C" %}selected{% endif %}>C</option>
+        </select>
+      </div>
+      <div class="control-row">
+        <button type="submit" class="btn-primary">Chạy phân tích</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2 class="panel-title">Phân bố nhóm ABC</h2>
+    <p class="panel-subtitle">
+      Biểu đồ tóm tắt số lượng nguyên vật liệu trong từng nhóm để nhìn nhanh mức
+      độ tập trung giá trị.
+    </p>
+    <canvas id="abcChart" style="max-height: 280px"></canvas>
+  </div>
+</div>
+
+<div class="table-card">
+  <div class="table-head">
+    <div>
+      <h2>
+        ABC theo sản phẩm{% if selected_product %}: {{ selected_product.name
+        }}{% endif %}
+      </h2>
+    </div>
+    {% if selected_product %}
+    <div class="info-chip">{{ selected_product.name }}</div>
+    {% else %}
+    <div class="info-chip">Chưa chọn sản phẩm</div>
+    {% endif %}
+  </div>
+  <div class="table-scroll">
+    <table>
+      <tr>
+        <th class="stt-col">STT</th>
+        <th>ID</th>
+        <th>Nguyên vật liệu</th>
+        <th>Nhu cầu</th>
+        <th>Đơn giá</th>
+        <th>Giá trị</th>
+        <th>ABC</th>
+      </tr>
+      {% for r in results %}
+      <tr>
+        <td class="stt-col">{{ forloop.counter }}</td>
+        <td>{{ r.material_id }}</td>
+        <td>{{ r.material }}</td>
+        <td>{{ r.demand }}</td>
+        <td>{{ r.price }}</td>
+        <td>{{ r.value|floatformat:1 }}</td>
+        <td>
+          <span
+            class="badge {% if r.abc == 'A' %}badge-a{% elif r.abc == 'B' %}badge-b{% else %}badge-c{% endif %}"
+          >
+            {{ r.abc }}
+          </span>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="7" class="empty-state">
+          Chọn sản phẩm để xem bảng ABC theo BOM.
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="table-card">
+  <div class="table-head">
+    <div>
+      <h2>Toàn bộ nguyên vật liệu</h2>
+    </div>
+    <div class="info-chip">Đang lọc: {{ selected_abc|default:"Tất cả" }}</div>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <tr>
+        <th class="stt-col">STT</th>
+        <th>ID</th>
+        <th>Nguyên vật liệu</th>
+        <th>Nhu cầu</th>
+        <th>Đơn giá</th>
+        <th>Giá trị</th>
+        <th>ABC</th>
+      </tr>
+      {% for r in filtered_materials %}
+      <tr>
+        <td class="stt-col">{{ forloop.counter }}</td>
+        <td>{{ r.material_id }}</td>
+        <td>{{ r.material }}</td>
+        <td>{{ r.demand }}</td>
+        <td>{{ r.price }}</td>
+        <td>{{ r.value|floatformat:1 }}</td>
+        <td>
+          <span
+            class="badge {% if r.abc == 'A' %}badge-a{% elif r.abc == 'B' %}badge-b{% else %}badge-c{% endif %}"
+          >
+            {{ r.abc }}
+          </span>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="7" class="empty-state">
+          Không có nguyên vật liệu phù hợp bộ lọc hiện tại.
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %} {% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  new Chart(document.getElementById("abcChart"), {
+    type: "bar",
+    data: {
+      labels: ["Nhóm A", "Nhóm B", "Nhóm C"],
+      datasets: [
+        {
+          label: "Số lượng nguyên vật liệu",
+          data: [
+            Number("{{ abc_total.A|default:0 }}"),
+            Number("{{ abc_total.B|default:0 }}"),
+            Number("{{ abc_total.C|default:0 }}"),
+          ],
+          backgroundColor: [
+            "#4b5f70",
+            "#4e8b90",
+            "#4f8e74",
+          ],
+          borderRadius: 10,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false,
+        },
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            precision: 0,
+          },
+        },
+      },
+    },
+  });
+</script>
+{% endblock %}

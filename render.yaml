@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: stratix
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn inventory_dss.wsgi:application --bind 0.0.0.0:$PORT
+    autoDeploy: true
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: stratix.onrender.com,127.0.0.1,localhost
+    envVarsFromServices:
+      - serviceName: stratix-db
+        envVar: DATABASE_URL
+
+databases:
+  - name: stratix-db
+    engine: postgres
+    plan: starter
+    region: oregon

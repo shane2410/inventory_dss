@@ -1,0 +1,922 @@
+﻿{% extends 'inventory/base.html' %} {% block content %}
+
+<style>
+  .dashboard-page {
+    background:
+      radial-gradient(
+        circle at top left,
+        rgba(107, 152, 183, 0.18),
+        transparent 28%
+      ),
+      radial-gradient(
+        circle at top right,
+        rgba(116, 176, 149, 0.16),
+        transparent 30%
+      ),
+      linear-gradient(135deg, #f2f8fb 0%, #f4fbf8 45%, #eef8f5 100%);
+    border-radius: 28px;
+    padding: 0 28px 28px;
+    box-shadow: 0 20px 50px rgba(39, 61, 107, 0.12);
+  }
+
+  .cards,
+  .recommendation-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+    margin-bottom: 22px;
+  }
+
+  .cards .stat-card,
+  .recommendation-summary .stat-card {
+    min-height: 148px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 12px;
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+
+  .cards .stat-card h3,
+  .recommendation-summary .stat-card h3 {
+    margin: 0 0 12px;
+    font-size: 17px;
+  }
+
+  .cards .stat-card p,
+  .recommendation-summary .stat-card p {
+    margin: 0;
+    line-height: 1.05;
+    font-size: 42px;
+  }
+
+  .recommendation-summary .stat-card.summary-chip-urgent-soft {
+    background: linear-gradient(135deg, #ac4242, #e58a8a) !important;
+  }
+
+  .recommendation-summary .stat-card.summary-chip-action-deep {
+    background: linear-gradient(135deg, #923743, #b65262) !important;
+  }
+
+  .recommendation-wrap {
+    margin-bottom: 22px;
+    background: rgba(255, 255, 255, 0.94);
+    border-radius: 22px;
+    overflow: hidden;
+    box-shadow: 0 18px 36px rgba(39, 58, 92, 0.12);
+  }
+
+  .recommendation-title {
+    margin: 0;
+    padding: 18px 20px;
+    color: #fff;
+    font-size: 22px;
+    background: linear-gradient(135deg, #365f85, #5885a7);
+  }
+
+  .recommendation-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    border-bottom: 1px solid #e6edf5;
+    background: rgba(247, 251, 255, 0.9);
+    flex-wrap: wrap;
+  }
+
+  .filter-form {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .filter-form select {
+    border-radius: 12px;
+    border: 1px solid #cfdeee;
+    padding: 9px 12px;
+    background: #fff;
+    color: #1f3442;
+    font-weight: 600;
+  }
+
+  .filter-form button {
+    border: none;
+    border-radius: 12px;
+    padding: 10px 14px;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    background: linear-gradient(135deg, #4f7ea1, #6b98b7);
+  }
+
+  .export-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .export-link {
+    text-decoration: none;
+    border-radius: 12px;
+    padding: 9px 12px;
+    border: 1px solid #cfdeee;
+    color: #2c4c66;
+    font-weight: 700;
+    background: #fff;
+  }
+
+  .filter-count {
+    font-size: 14px;
+    color: #161b20;
+    font-weight: 600;
+  }
+
+  .is-hidden {
+    display: none;
+  }
+
+  .urgency-badge {
+    display: inline-block;
+    min-width: 86px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    text-align: center;
+    letter-spacing: 0.3px;
+    box-shadow: 0 10px 20px rgba(84, 119, 146, 0.18);
+  }
+
+  .urgency-urgent {
+    background: linear-gradient(135deg, #a85858, #e58a8a);
+  }
+
+  .urgency-medium {
+    background: linear-gradient(135deg, #d4aa33, #f2c84b);
+    color: #423100;
+  }
+
+  .urgency-low {
+    background: linear-gradient(135deg, #5f8a67, #7ca184);
+  }
+
+  .decision-note {
+    margin: 0;
+    color: #355066;
+    font-weight: 600;
+  }
+
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 22px;
+  }
+
+  .dashboard-sales-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 1fr);
+    gap: 22px;
+    align-items: start;
+    margin-bottom: 22px;
+  }
+
+  .sales-chart-panel {
+    display: flex;
+    flex-direction: column;
+    padding: 4px 12px 4px;
+    box-sizing: border-box;
+    margin-top: 24px;
+  }
+
+  .sales-chart-panel h2 {
+    margin: 0 0 2px;
+    font-size: 18px;
+  }
+
+  .sales-chart-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .sales-chart-panel .dashboard-table-title {
+    padding: 0;
+  }
+
+  .sales-chart-panel canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+  }
+
+  .sales-chart-note {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.55;
+    font-size: 14px;
+  }
+
+  .dashboard-sales-table-card {
+    margin-top: 0;
+  }
+
+  .dashboard-top-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+    gap: 22px;
+    align-items: start;
+    margin-bottom: 22px;
+  }
+
+  .dashboard-top-stack {
+    display: grid;
+    gap: 18px;
+  }
+
+  .dashboard-top-stack .cards,
+  .dashboard-top-stack .recommendation-summary {
+    margin-bottom: 0;
+  }
+
+  .dashboard-top-stack .cards,
+  .dashboard-top-stack .recommendation-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .abc-chart-panel {
+    display: grid;
+    grid-template-columns: minmax(220px, 240px) minmax(0, 1fr);
+    gap: 18px;
+    align-items: center;
+  }
+
+  .abc-legend {
+    display: grid;
+    gap: 12px;
+    font-weight: 700;
+    color: #1f3442;
+  }
+
+  .abc-legend-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .abc-legend-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .abc-legend-value {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .dashboard-panel {
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 22px;
+    padding: 22px;
+    box-shadow: 0 14px 28px rgba(55, 74, 109, 0.1);
+  }
+
+  .dashboard-panel h2 {
+    margin: 0 0 12px;
+    color: #17324d;
+    font-size: 20px;
+  }
+
+  .dashboard-panel form {
+    display: grid;
+    gap: 12px;
+  }
+
+  .dashboard-panel label {
+    font-weight: 700;
+    color: #28435d;
+    margin-bottom: -4px;
+  }
+
+  .dashboard-panel input,
+  .dashboard-panel select,
+  .dashboard-panel button {
+    width: 100%;
+    box-sizing: border-box;
+    border-radius: 14px;
+    border: 1px solid #d8e4f1;
+    padding: 12px 14px;
+    font-size: 15px;
+  }
+
+  .dashboard-panel input,
+  .dashboard-panel select {
+    background: #fff;
+  }
+
+  .dashboard-panel button {
+    border: none;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+      transform 0.18s ease,
+      box-shadow 0.18s ease;
+  }
+
+  .btn-sales {
+    background: var(--accent-1);
+    box-shadow: 0 12px 22px rgba(79, 126, 161, 0.22);
+  }
+
+  .btn-transaction {
+    background: var(--accent-2);
+    box-shadow: 0 12px 22px rgba(63, 124, 133, 0.2);
+  }
+
+  .dashboard-panel button:hover {
+    transform: translateY(-1px);
+  }
+
+  .dashboard-note {
+    margin: 14px 0 0;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: linear-gradient(
+      135deg,
+      rgba(98, 170, 177, 0.14),
+      rgba(116, 176, 149, 0.16)
+    );
+    color: #355460;
+    font-weight: 600;
+  }
+
+  .dashboard-table-wrap {
+    margin-top: 22px;
+    background: rgba(255, 255, 255, 0.94);
+    border-radius: 22px;
+    overflow: hidden;
+    box-shadow: 0 18px 36px rgba(39, 58, 92, 0.12);
+  }
+
+  .dashboard-table-title {
+    margin: 0;
+    padding: 18px 20px;
+    color: #fff;
+    font-size: 22px;
+  }
+
+  .sales-title {
+    background: var(--accent-1);
+  }
+
+  .transaction-title {
+    background: var(--accent-2);
+  }
+
+  .dashboard-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: transparent;
+  }
+
+  .dashboard-table th {
+    background: var(--table-th);
+    color: #fff;
+    padding: 14px;
+    font-size: 14px;
+  }
+
+  .dashboard-table td {
+    padding: 14px;
+    border-bottom: 1px solid #edf2f7;
+    background: rgba(255, 255, 255, 0.96);
+  }
+
+  .dashboard-table tr:nth-child(even) td {
+    background: #f8fbff;
+  }
+
+  .action-link {
+    color: #e11d48;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .action-link:hover {
+    text-decoration: underline;
+  }
+
+  .type-in,
+  .type-out {
+    display: inline-block;
+    min-width: 74px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+  }
+
+  .type-in {
+    background: linear-gradient(135deg, #5f8a67, #7ca184);
+  }
+
+  .type-out {
+    background: linear-gradient(135deg, #c45353, #de6b6b);
+  }
+
+  @media (max-width: 768px) {
+    .dashboard-page {
+      padding: 18px;
+      border-radius: 20px;
+    }
+
+    .page-hero {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .dashboard-top-row,
+    .abc-chart-panel,
+    .dashboard-sales-row {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="dashboard-page">
+  <div class="page-hero">
+    <div>
+      <h1 class="page-title">Tổng quan</h1>
+    </div>
+    <div class="hero-badge">Hệ thống tồn kho</div>
+  </div>
+
+  <!-- ========================= -->
+  <!-- SUMMARY -->
+  <!-- ========================= -->
+  <div class="dashboard-top-row">
+    <div class="dashboard-top-stack">
+      <div class="cards">
+        <div class="stat-card stat-blue">
+          <h3>Tổng số sản phẩm</h3>
+          <p>{{ total_products }}</p>
+        </div>
+
+        <div class="stat-card stat-green">
+          <h3>Tổng số nguyên vật liệu</h3>
+          <p>{{ total_materials }}</p>
+        </div>
+      </div>
+
+      <div class="recommendation-summary">
+        <div class="stat-card summary-chip-action-deep">
+          <h3>Vật tư khẩn cấp</h3>
+          <p>{{ recommendation_summary.urgent }}</p>
+        </div>
+        <div class="stat-card summary-chip-urgent-soft">
+          <h3>Vật tư cần xử lý</h3>
+          <p>{{ recommendation_summary.order }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-panel">
+      <h2>Tỷ trọng ABC theo giá trị vật tư</h2>
+      <div class="abc-chart-panel">
+        <div style="max-width:240px;justify-self:center;">
+          <canvas id="abcPie" style="width:240px;height:240px"></canvas>
+        </div>
+        <div class="abc-legend">
+          <div class="abc-legend-item">
+            <div class="abc-legend-label"><span class="badge badge-a">&nbsp;&nbsp;</span><span>A</span></div>
+            <div class="abc-legend-value" id="abcAInfo">0</div>
+          </div>
+          <div class="abc-legend-item">
+            <div class="abc-legend-label"><span class="badge badge-b">&nbsp;&nbsp;</span><span>B</span></div>
+            <div class="abc-legend-value" id="abcBInfo">0</div>
+          </div>
+          <div class="abc-legend-item">
+            <div class="abc-legend-label"><span class="badge badge-c">&nbsp;&nbsp;</span><span>C</span></div>
+            <div class="abc-legend-value" id="abcCInfo">0</div>
+          </div>
+          <div class="abc-legend-item" style="padding-top: 8px; border-top: 1px solid #e6edf5;">
+            <div class="abc-legend-label" style="font-weight: 600;">Tổng giá trị</div>
+            <div class="abc-legend-value" id="abcTotalInfo" style="font-weight: 600;">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="recommendation-wrap">
+    <h2 class="recommendation-title">Gợi ý quyết định đặt hàng ngay</h2>
+
+    <div class="recommendation-toolbar">
+      <div class="export-actions">
+        {% if recommendation_filtered > 5 %}
+        <button
+          type="button"
+          id="toggleRecommendationRows"
+          class="export-link"
+          data-expanded="false"
+          data-show-text="Hiển thị chi tiết {{ recommendation_filtered }} URGENT"
+          data-hide-text="Thu gọn (5 URGENT)"
+        >Hiển thị chi tiết {{ recommendation_filtered }} URGENT</button>
+        {% else %}
+        <span class="filter-count">Hiển thị {{ recommendation_filtered }} URGENT</span>
+        {% endif %}
+        <a class="export-link" href="{% url 'recommendation-excel-api' %}"
+          >Tải Excel</a
+        >
+      </div>
+    </div>
+    <table class="dashboard-table" id="recommendationTable">
+      <tr>
+        <th class="stt-col">STT</th>
+        <th>Mã</th>
+        <th>Vật liệu</th>
+        <th>IP / ROP</th>
+        <th>Số lượng đề xuất</th>
+        <th>Khẩn cấp</th>
+        <th>Nhóm ABC</th>
+        <th>Khuyến nghị</th>
+      </tr>
+      {% for rec in recommendations %}
+      <tr class="recommendation-row {% if forloop.counter > 5 %}recommendation-row-extra is-hidden{% endif %}">
+        <td class="stt-col">{{ forloop.counter }}</td>
+        <td>{{ rec.item }}</td>
+        <td>{{ rec.material_name }}</td>
+        <td>{{ rec.ip }} / {{ rec.rop }}</td>
+        <td>{{ rec.quantity }}</td>
+        <td>
+          <span class="urgency-badge urgency-urgent">URGENT</span>
+        </td>
+        <td>{{ rec.abc_class }}</td>
+        <td><p class="decision-note">{{ rec.message }}</p></td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="8" style="text-align: center">
+          Chưa đủ dữ liệu để sinh gợi ý quyết định.
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="dashboard-sales-row">
+    <div class="dashboard-table-wrap dashboard-sales-table-card">
+    <h2 class="dashboard-table-title sales-title">Doanh số gần đây</h2>
+    <table class="dashboard-table">
+      <tr>
+        <th>Sản phẩm</th>
+        <th>Số lượng</th>
+        <th>Ngày</th>
+        <th>Thao tác</th>
+      </tr>
+
+      {% for s in sales_list %}
+      <tr>
+        <td>{{ s.product.name }}</td>
+        <td>{{ s.quantity }}</td>
+        <td>{{ s.date|date:"j/n/Y" }}</td>
+        <td>
+          <a
+            href="{% url 'delete_sale' s.id %}"
+            onclick="return confirm('Bạn chắc chắn muốn xóa?');"
+            class="action-link"
+          >
+            Xóa
+          </a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="4" style="text-align: center">Chưa có dữ liệu</td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+
+    <div class="dashboard-panel sales-chart-panel">
+      <h2>Top 5 sản phẩm có doanh thu cao nhất</h2>
+      <!-- subtitle removed to make chart width match left table -->
+      <div class="sales-chart-wrap">
+        <canvas id="topSalesChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-table-wrap">
+    <h2 class="dashboard-table-title transaction-title">Giao dịch gần đây</h2>
+    <table class="dashboard-table">
+      <tr>
+        <th>ID</th>
+        <th>Nguyên vật liệu</th>
+        <th>Số lượng</th>
+        <th>Loại</th>
+        <th>Ngày</th>
+        <th>Thao tác</th>
+      </tr>
+
+      {% for t in transaction_list %}
+      <tr>
+        <td>{{ t.material.source_id|default:t.material.id }}</td>
+        <td>{{ t.material.name }}</td>
+        <td>{{ t.quantity }}</td>
+        <td>
+          {% if t.transaction_type == 'IN' %}
+          <span class="type-in">Nhập kho</span>
+          {% else %}
+          <span class="type-out">Xuất kho</span>
+          {% endif %}
+        </td>
+        <td>{{ t.date }}</td>
+        <td>
+          <a
+            href="{% url 'delete_transaction' t.id %}"
+            onclick="return confirm('Xóa transaction này?');"
+            class="action-link"
+          >
+            Xóa
+          </a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="6" style="text-align: center">Chưa có dữ liệu</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+{{ abc_chart_data|json_script:"abc-chart-data" }}
+{{ top_sales_chart_data|json_script:"top-sales-chart-data" }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+<script>
+  (function() {
+    const chartDataElement = document.getElementById('abc-chart-data');
+    const chartData = JSON.parse(chartDataElement.textContent);
+    const values = chartData.values;
+    const total = chartData.total || values.reduce((sum, value) => sum + value, 0);
+
+    const ctx = document.getElementById('abcPie').getContext('2d');
+
+    Chart.register(ChartDataLabels);
+
+    new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: chartData.labels,
+        datasets: [{
+          data: values,
+          backgroundColor: chartData.colors,
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          datalabels: {
+            color: '#ffffff',
+            font: {
+              weight: '800',
+              size: 13
+            },
+            formatter: (value) => {
+              if (!total) {
+                return '0%';
+              }
+              return `${((value / total) * 100).toFixed(1)}%`;
+            }
+          }
+        }
+      }
+    });
+
+    const currencyFormatter = new Intl.NumberFormat('vi-VN');
+
+    document.getElementById('abcAInfo').innerText = currencyFormatter.format(values[0]);
+    document.getElementById('abcBInfo').innerText = currencyFormatter.format(values[1]);
+    document.getElementById('abcCInfo').innerText = currencyFormatter.format(values[2]);
+    document.getElementById('abcTotalInfo').innerText = currencyFormatter.format(total);
+
+    const topSalesDataElement = document.getElementById('top-sales-chart-data');
+    const topSalesData = JSON.parse(topSalesDataElement.textContent);
+
+    const revenues = topSalesData.values || [];
+    const percents = topSalesData.cumulative_percent || [];
+
+    function computeNiceRoundedMax(values) {
+      const validValues = (values || []).filter((v) => Number.isFinite(v) && v > 0);
+      if (!validValues.length) {
+        return 10;
+      }
+
+      const rawMax = Math.max(...validValues);
+      const roughStep = rawMax / 6;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+      const normalized = roughStep / magnitude;
+
+      let niceNormalizedStep = 10;
+      if (normalized <= 1) {
+        niceNormalizedStep = 1;
+      } else if (normalized <= 2) {
+        niceNormalizedStep = 2;
+      } else if (normalized <= 2.5) {
+        niceNormalizedStep = 2.5;
+      } else if (normalized <= 5) {
+        niceNormalizedStep = 5;
+      }
+
+      const step = niceNormalizedStep * magnitude;
+      return Math.ceil(rawMax / step) * step;
+    }
+
+    const revenueAxisMax = computeNiceRoundedMax(revenues);
+
+    const topSalesCtx = document.getElementById('topSalesChart').getContext('2d');
+
+    // compute suggested max to make bars visually shorter
+    const maxRevenue = revenues.length ? Math.max.apply(null, revenues) : 0;
+    // add some headroom and round to nearest 1000 for nicer ticks
+    const suggestedMax = maxRevenue > 0 ? Math.ceil((maxRevenue * 1.6) / 1000) * 1000 : undefined;
+
+    const topSalesChart = new Chart(topSalesCtx, {
+      type: 'bar',
+      data: {
+        labels: topSalesData.labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Doanh thu',
+            data: revenues,
+            backgroundColor: '#5f8da8',
+            borderRadius: 10,
+            maxBarThickness: 60,
+            order: 2,
+            yAxisID: 'y',
+          },
+          {
+            type: 'line',
+            label: 'Tỷ trọng',
+            data: percents,
+            borderColor: '#e58a8a',
+            backgroundColor: '#e58a8a',
+            tension: 0.35,
+            pointRadius: 5,
+            pointHoverRadius: 6,
+            borderWidth: 3,
+            clip: false,
+            yAxisID: 'y1',
+            order: 0,
+            fill: false,
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: {
+              usePointStyle: true,
+              boxWidth: 10,
+            }
+          },
+          datalabels: {
+            display: function(ctx) { return ctx.dataset.type === 'bar' || ctx.dataset.type === 'line'; },
+            color: '#17324d',
+            anchor: function(ctx) { return ctx.dataset.type === 'bar' ? 'end' : 'end'; },
+            align: function(ctx) { return ctx.dataset.type === 'bar' ? 'end' : 'top'; },
+            font: { weight: '700', size: 12 },
+            formatter: function(value, ctx) {
+              if (ctx.dataset.type === 'bar') {
+                try { return currencyFormatter.format(value); } catch (e) { return value; }
+              }
+              // line -> percent
+              return value + '%';
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                if (context.dataset.type === 'line') {
+                  return ` ${context.dataset.label}: ${context.parsed.y}%`;
+                }
+                try { return ` ${context.dataset.label}: ` + currencyFormatter.format(context.parsed.y); } catch (e) { return ` ${context.dataset.label}: ${context.parsed.y}`; }
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: revenueAxisMax,
+            title: {
+              display: true,
+              text: 'Doanh thu ($)',
+            },
+            ticks: {
+              callback: function(value) { return currencyFormatter.format(value); }
+            },
+          },
+          y1: {
+            position: 'right',
+            min: 0,
+            max: 10,
+            grid: { display: false },
+            ticks: {
+              callback: function(value) { return value + '%'; }
+            },
+            title: {
+              display: true,
+              text: 'Tỷ trọng',
+            }
+          }
+        }
+      }
+    });
+
+    const salesTableCard = document.querySelector('.dashboard-sales-table-card');
+    const salesChartPanel = document.querySelector('.sales-chart-panel');
+
+    function syncSalesCardHeight() {
+      if (!salesTableCard || !salesChartPanel) {
+        return;
+      }
+
+      const salesChartWrap = salesChartPanel.querySelector('.sales-chart-wrap');
+      const salesChartTitle = salesChartPanel.querySelector('h2');
+      const panelStyle = window.getComputedStyle(salesChartPanel);
+
+      salesChartPanel.style.height = 'auto';
+      salesChartPanel.style.minHeight = '0';
+      const targetHeight = salesTableCard.getBoundingClientRect().height;
+      salesChartPanel.style.height = `${Math.ceil(targetHeight)}px`;
+
+      if (salesChartWrap && salesChartTitle) {
+        const titleHeight = salesChartTitle.getBoundingClientRect().height;
+        const paddingTop = parseFloat(panelStyle.paddingTop) || 0;
+        const paddingBottom = parseFloat(panelStyle.paddingBottom) || 0;
+        const availableHeight = Math.max(
+          0,
+          Math.ceil(targetHeight - titleHeight - paddingTop - paddingBottom)
+        );
+        salesChartWrap.style.height = `${availableHeight}px`;
+      }
+
+      if (topSalesChart) {
+        requestAnimationFrame(() => {
+          topSalesChart.resize();
+        });
+      }
+    }
+
+    window.addEventListener('load', syncSalesCardHeight);
+    window.addEventListener('resize', syncSalesCardHeight);
+    syncSalesCardHeight();
+
+    const toggleRecommendationRowsBtn = document.getElementById('toggleRecommendationRows');
+    if (toggleRecommendationRowsBtn) {
+      toggleRecommendationRowsBtn.addEventListener('click', function() {
+        const isExpanded = toggleRecommendationRowsBtn.dataset.expanded === 'true';
+        const extraRows = document.querySelectorAll('.recommendation-row-extra');
+
+        extraRows.forEach((row) => {
+          if (isExpanded) {
+            row.classList.add('is-hidden');
+          } else {
+            row.classList.remove('is-hidden');
+          }
+        });
+
+        toggleRecommendationRowsBtn.dataset.expanded = isExpanded ? 'false' : 'true';
+        toggleRecommendationRowsBtn.textContent = isExpanded
+          ? toggleRecommendationRowsBtn.dataset.showText
+          : toggleRecommendationRowsBtn.dataset.hideText;
+      });
+    }
+  })();
+</script>
+{% endblock %}

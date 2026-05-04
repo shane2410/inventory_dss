@@ -1,0 +1,102 @@
+﻿{% extends "inventory/base.html" %} {% block extra_styles %}
+<style>
+  .stats-grid .stat-urgent {
+    background: linear-gradient(135deg, #7f2f3b, #a84a58);
+  }
+</style>
+{% endblock %} {% block content %}
+
+<div class="page-hero">
+  <div>
+    <h1 class="page-title">Cảnh báo tồn kho</h1>
+    <p class="page-subtitle">
+      Tập trung vào các nguyên vật liệu có vị trí tồn kho thấp hơn điểm đặt hàng
+      lại để ưu tiên xử lý trước.
+    </p>
+  </div>
+  <div class="hero-badge">Cảnh báo ưu tiên</div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card stat-urgent">
+    <h3>URGENT</h3>
+    <p>{{ summary.urgent }}</p>
+  </div>
+  <div class="stat-card stat-purple">
+    <h3>MEDIUM</h3>
+    <p>{{ summary.medium }}</p>
+  </div>
+  <div class="stat-card stat-blue">
+    <h3>LOW</h3>
+    <p>{{ summary.low }}</p>
+  </div>
+</div>
+
+<div class="table-card">
+  <div class="table-head">
+    <div>
+      <h2>Danh sách cảnh báo</h2>
+      <p>
+        So sánh trực tiếp giữa vị trí tồn kho IP và điểm đặt hàng lại ROP để
+        nhìn ra vật tư cần đặt ngay.
+      </p>
+    </div>
+    <div class="info-chip">
+      {% if alerts %}Cần xử lý {{ alerts|length }} dòng{% else %}Không có cảnh
+      báo{% endif %}
+    </div>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <tr>
+        <th class="stt-col">STT</th>
+        <th>ID</th>
+        <th>IP</th>
+        <th>ROP</th>
+        <th>Nhóm ABC</th>
+        <th>Mức độ</th>
+        <th>Trạng thái</th>
+        <th>S tối ưu</th>
+        <th>Lượng đặt Q</th>
+        <th>Còn lại</th>
+        <th>Khuyến nghị</th>
+        <th>Chi phí</th>
+      </tr>
+
+      {% for a in alerts %}
+      <tr>
+        <td class="stt-col">{{ forloop.counter }}</td>
+        <td>{{ a.material_code }}</td>
+        <td>{{ a.ip }}</td>
+        <td>{{ a.rop }}</td>
+        <td>{{ a.abc_class }}</td>
+        <td>
+          {% if a.urgency == 'URGENT' %}
+          <span class="badge badge-urgent">URGENT</span>
+          {% elif a.urgency == 'MEDIUM' %}
+          <span class="badge badge-medium">MEDIUM</span>
+          {% else %}
+          <span class="badge badge-low">LOW</span>
+          {% endif %}
+        </td>
+        <td><span class="badge badge-order">{% if a.status == "ORDER" %}Đặt hàng{% else %}{{ a.status }}{% endif %}</span></td>
+        <td>{{ a.s }}</td>
+        <td>{{ a.q }}</td>
+        <td>
+          {% if a.days_left %}{{ a.days_left }} ngày{% else %}N/A{% endif %}
+        </td>
+        <td>{{ a.recommendation }}</td>
+        <td>{{ a.cost|floatformat:1 }}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="11" class="empty-state">
+          Không có cảnh báo tồn kho trong thời điểm hiện tại.
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,199 @@
+﻿{% extends 'inventory/base.html' %} {% block content %}
+<div class="page-hero">
+  <div>
+    <h1 class="page-title">Quyền truy cập</h1>
+    <p class="page-subtitle">
+      Chỉ tài khoản admin mới có thể xem trang này. Bạn có thể tạo thêm tài
+      khoản đăng nhập cho người dùng khác và gán vai trò ngay tại đây.
+    </p>
+  </div>
+  <div class="hero-badge">Admin Only</div>
+</div>
+
+<div class="content-grid">
+  <style>
+    .delete-user-btn {
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #c45353, #de6b6b);
+      color: #fff;
+      border: none;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 10px 18px rgba(196, 83, 83, 0.18);
+    }
+
+    .delete-user-btn:hover {
+      filter: brightness(0.97);
+    }
+
+    .role-form {
+      display: grid;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .role-select {
+      min-width: 180px;
+    }
+
+    .role-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .role-save-btn {
+      padding: 8px 12px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #4f7ea1, #6b98b7);
+      color: #fff;
+      border: none;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 10px 18px rgba(79, 126, 161, 0.18);
+    }
+
+    .role-save-btn:hover {
+      filter: brightness(0.97);
+    }
+  </style>
+  <div class="panel">
+    <h2 class="panel-title">Tạo tài khoản mới</h2>
+    <p class="panel-subtitle">
+      Nhập tên đăng nhập và mật khẩu để thêm người dùng mới.
+    </p>
+
+    <form method="POST" class="control-form">
+      {% csrf_token %}
+      <div class="field">
+        <label for="username">Tên đăng nhập</label>
+        <input
+          id="username"
+          name="username"
+          type="text"
+          class="input"
+          placeholder="Nhập tài khoản"
+          required
+        />
+      </div>
+      <div class="field">
+        <label for="password">Mật khẩu</label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          class="input"
+          placeholder="Nhập mật khẩu"
+          required
+        />
+      </div>
+      <div class="field">
+        <label for="role_code">Vai trò</label>
+        <select id="role_code" name="role_code" class="input searchable role-select">
+          {% for role_code, role_label in role_choices %}
+          <option value="{{ role_code }}" {% if role_code == default_role_code %}selected{% endif %}>
+            {{ role_label }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn-primary">Tạo tài khoản</button>
+    </form>
+
+    {% if error_message %}
+    <div class="error-message" style="margin-top: 12px">
+      {{ error_message }}
+    </div>
+    {% endif %} {% if success_message %}
+    <div
+      style="
+        margin-top: 12px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(74, 143, 116, 0.14);
+        color: #246b50;
+        font-weight: 700;
+      "
+    >
+      {{ success_message }}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2 class="panel-title">Danh sách tài khoản</h2>
+    <p class="panel-subtitle">Các tài khoản hiện có trong hệ thống.</p>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th class="stt-col">STT</th>
+            <th>Tên đăng nhập</th>
+            <th>Vai trò</th>
+            <th>Trạng thái</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td class="stt-col">{{ forloop.counter }}</td>
+            <td>{{ u.username }}</td>
+            <td>
+              {% if u.is_superuser %}
+              <span class="badge badge-a">Admin</span>
+              {% else %}
+              <span class="badge badge-b">{{ u.role_label }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if u.is_active %}
+              <span class="badge badge-ok">Đang hoạt động</span>
+              {% else %}
+              <span class="badge badge-low">Đã khóa</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if u.id == request.user.id %}
+              <span class="muted-text">Đang đăng nhập</span>
+              {% elif u.is_superuser %}
+              <span class="muted-text">Không thể thay đổi</span>
+              {% elif request.user.is_superuser %}
+              <div class="role-actions">
+                <form method="POST" class="role-form">
+                  {% csrf_token %}
+                  <input type="hidden" name="update_role_user_id" value="{{ u.id }}" />
+                  <select name="role_code" class="input role-select">
+                    {% for role_code, role_label in role_choices %}
+                    <option value="{{ role_code }}" {% if role_code == u.role_code %}selected{% endif %}>
+                      {{ role_label }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="role-save-btn">Lưu</button>
+                </form>
+                <form method="POST" onsubmit="return confirm('Bạn chắc chắn muốn xóa tài khoản này?');">
+                  {% csrf_token %}
+                  <input type="hidden" name="delete_user_id" value="{{ u.id }}" />
+                  <button type="submit" class="delete-user-btn">Xóa</button>
+                </form>
+              </div>
+              {% else %}
+              <span class="muted-text">Không có quyền</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" class="muted-text">Chưa có tài khoản nào.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

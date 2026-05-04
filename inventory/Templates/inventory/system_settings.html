@@ -1,0 +1,128 @@
+﻿{% extends "inventory/base.html" %} {% block content %}
+
+<div class="page-hero">
+  <div>
+    <h1 class="page-title">Hệ thống</h1>
+    <p class="page-subtitle">
+      Khu vực cấu hình hệ thống web. Trang này dùng chung style hiện tại để bạn
+      mở rộng các thiết lập vận hành sau này.
+    </p>
+  </div>
+  <div class="hero-badge">System Settings</div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card stat-blue">
+    <h3>Trạng thái</h3>
+    <p>Online</p>
+  </div>
+  <div class="stat-card stat-green">
+    <h3>Môi trường</h3>
+    <p>Local</p>
+  </div>
+  <div class="stat-card stat-purple">
+    <h3>Phiên bản</h3>
+    <p>v1.0</p>
+  </div>
+</div>
+
+<div class="content-grid">
+  <div class="panel">
+    <h2 class="panel-title">Thiết lập giao diện</h2>
+    <p class="panel-subtitle">
+      Khối này dành cho cấu hình giao diện tổng quát: theme, màu chủ đạo,
+      sidebar, logo.
+    </p>
+    <div class="table-scroll">
+      <table>
+        <tr>
+          <th class="stt-col">STT</th>
+          <th>Hạng mục</th>
+          <th>Giá trị hiện tại</th>
+        </tr>
+        <tr>
+          <td>1</td>
+          <td>Theme chính</td>
+          <td>Blue + Green</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>Sidebar</td>
+          <td>Có toggle đóng/mở</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>Ngôn ngữ</td>
+          <td>Tiếng Việt</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 class="panel-title">Thiết lập hệ thống</h2>
+    <p class="panel-subtitle">
+      Khối này dành cho cấu hình nghiệp vụ: ngưỡng cảnh báo, kỳ dự báo, mức dịch
+      vụ, log hệ thống.
+    </p>
+    <div class="table-scroll">
+      <table>
+        <tr>
+          <th class="stt-col">STT</th>
+          <th>Thiết lập</th>
+          <th>Mô tả</th>
+        </tr>
+        <tr>
+          <td>1</td>
+          <td>Ngưỡng tồn kho</td>
+          <td>Cấu hình mức cảnh báo theo vật tư hoặc nhóm vật tư.</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>Kỳ dự báo</td>
+          <td>Tùy chỉnh số ngày dự báo mặc định.</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>Nhật ký hệ thống</td>
+          <td>Theo dõi lịch sử thao tác quản trị.</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="table-card">
+  <div class="table-head">
+    <div>
+      <h2>Gợi ý mở rộng</h2>
+      <p>Trang hiện tại là nền tảng để thêm form cấu hình thật khi bạn cần.</p>
+    </div>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <tr>
+        <th class="stt-col">STT</th>
+        <th>Nhóm chức năng</th>
+        <th>Hành động đề xuất</th>
+      </tr>
+      <tr>
+        <td>1</td>
+        <td>Quản trị người dùng</td>
+        <td>Thêm phân quyền theo vai trò (Admin, Planner, Viewer).</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>Cấu hình cảnh báo</td>
+        <td>Cho phép chỉnh ngưỡng cảnh báo theo từng vật tư.</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>Tùy chỉnh dự báo</td>
+        <td>Cho phép đổi số ngày dự báo và chọn mô hình mặc định.</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
