@@ -1,4 +1,5 @@
 {
+  "python.defaultInterpreterPath": "C:\\venvs\\inventory_dss\\Scripts\\python.exe",
   "[html]": {
     "editor.formatOnSave": false
   },
