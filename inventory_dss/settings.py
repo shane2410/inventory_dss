@@ -27,7 +27,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 # Hosts: include Render default for service named "stratix" plus localhost defaults
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'stratix.onrender.com,127.0.0.1,localhost').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '.onrender.com,127.0.0.1,localhost').split(',')
 
 # Show a user-friendly message when CSRF token is stale/invalid.
 CSRF_FAILURE_VIEW = 'inventory.views.csrf_failure'

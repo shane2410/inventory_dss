@@ -10,4 +10,4 @@ services:
       - key: DEBUG
         value: "False"
       - key: ALLOWED_HOSTS
-        value: stratix.onrender.com,127.0.0.1,localhost
+        value: .onrender.com,127.0.0.1,localhost
