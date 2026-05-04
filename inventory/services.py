@@ -11,7 +11,7 @@ def forecast_product(product_id):
     df = pd.DataFrame(list(sales))
 
     if df.empty or len(df) < 5:
-        return 0, 0, [0] * 7
+        return 0, 0, [0] * 7, 0, 0, 0
 
     # ===== CLEAN =====
     df['date'] = pd.to_datetime(df['date'])
