@@ -60,7 +60,10 @@ ROOT_URLCONF = 'inventory_dss.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates'],   # ✅ thêm dòng này,
+        'DIRS': [
+            BASE_DIR / 'templates',
+            BASE_DIR / 'inventory' / 'Templates',
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -142,9 +145,8 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static'),
-]
+_default_static_dir = os.path.join(BASE_DIR, 'static')
+STATICFILES_DIRS = [_default_static_dir] if os.path.isdir(_default_static_dir) else []
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
