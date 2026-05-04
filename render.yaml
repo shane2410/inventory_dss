@@ -11,3 +11,9 @@ services:
         value: "False"
       - key: ALLOWED_HOSTS
         value: .onrender.com,127.0.0.1,localhost
+      - key: USE_DJONGO
+        value: "1"
+      - key: MONGO_DB_NAME
+        value: inventory_db
+      - key: MONGO_URI
+        sync: false
