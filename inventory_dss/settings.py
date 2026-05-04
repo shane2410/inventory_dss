@@ -89,8 +89,22 @@ WSGI_APPLICATION = 'inventory_dss.wsgi.application'
 # 2) USE_MYSQL=1
 # 3) SQLite fallback for local development
 database_url = os.getenv('DATABASE_URL')
+use_djongo = os.getenv('USE_DJONGO') == '1'
+mongo_uri = os.getenv('MONGO_URI')
+mongo_name = os.getenv('MONGO_DB_NAME', 'inventory_db')
 
-if database_url:
+# If requested, use Djongo (keeps Django ORM/migrations, backed by MongoDB)
+if use_djongo or (mongo_uri and mongo_uri.startswith('mongodb')):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'djongo',
+            'NAME': mongo_name,
+            'CLIENT': {
+                'host': mongo_uri or 'mongodb://127.0.0.1:27017',
+            },
+        }
+    }
+elif database_url:
     DATABASES = {
         'default': dj_database_url.config(
             default=database_url,

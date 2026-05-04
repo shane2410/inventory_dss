@@ -6,7 +6,7 @@ from datetime import date
 # MATERIAL
 # =========================
 class Material(models.Model):
-    source_id = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    source_id = models.CharField(max_length=50, db_index=True, null=True, blank=True)
     name = models.CharField(max_length=255)
     on_hand= models.FloatField(default=0)
 
@@ -29,7 +29,7 @@ class Material(models.Model):
 # PRODUCT
 # =========================
 class Product(models.Model):
-    source_id = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    source_id = models.CharField(max_length=50, db_index=True, null=True, blank=True)
     name = models.CharField(max_length=255)
 
     def __str__(self):
