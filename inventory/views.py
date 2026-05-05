@@ -986,3 +986,201 @@ def import_data(request):
         'min_date': min_date,
         'today': today,
     })
+
+
+# =========================
+# MONGODB API ENDPOINTS
+# =========================
+from .mongodb import (
+    insert_material, get_all_materials, get_material_by_id, update_material, delete_material,
+    insert_product, get_all_products, get_product_by_id, update_product, delete_product,
+    insert_transaction, get_transactions_by_material, update_transaction, delete_transaction
+)
+from bson.objectid import ObjectId
+import json
+
+
+@session_name_required
+def api_mongodb_materials(request):
+    """API để quản lý materials trong MongoDB"""
+    if request.method == 'GET':
+        # Lấy tất cả materials
+        materials = get_all_materials()
+        materials_list = []
+        for mat in materials:
+            mat['_id'] = str(mat['_id'])  # Convert ObjectId to string
+            materials_list.append(mat)
+        return JsonResponse({'status': 'success', 'data': materials_list})
+    
+    elif request.method == 'POST':
+        # Thêm material mới
+        try:
+            data = json.loads(request.body)
+            material_id = insert_material(
+                name=data.get('name'),
+                on_hand=data.get('on_hand', 0),
+                holding_cost=data.get('holding_cost', 0),
+                ordering_cost=data.get('ordering_cost', 0),
+                price_cost=data.get('price_cost', 0),
+                source_id=data.get('source_id')
+            )
+            return JsonResponse({'status': 'success', 'message': f'Material inserted: {material_id}'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+
+@session_name_required
+def api_mongodb_material_detail(request, material_id):
+    """API để xem/update/delete material cụ thể"""
+    if request.method == 'GET':
+        # Lấy material by ID
+        material = get_material_by_id(material_id)
+        if material:
+            material['_id'] = str(material['_id'])
+            return JsonResponse({'status': 'success', 'data': material})
+        return JsonResponse({'status': 'error', 'message': 'Material not found'}, status=404)
+    
+    elif request.method == 'PUT':
+        # Update material
+        try:
+            data = json.loads(request.body)
+            modified = update_material(material_id, **data)
+            return JsonResponse({'status': 'success', 'message': f'Material updated: {modified} documents'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+    
+    elif request.method == 'DELETE':
+        # Delete material
+        try:
+            deleted = delete_material(material_id)
+            return JsonResponse({'status': 'success', 'message': f'Material deleted: {deleted} documents'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+
+@session_name_required
+def api_mongodb_products(request):
+    """API để quản lý products trong MongoDB"""
+    if request.method == 'GET':
+        products = get_all_products()
+        products_list = []
+        for prod in products:
+            prod['_id'] = str(prod['_id'])
+            products_list.append(prod)
+        return JsonResponse({'status': 'success', 'data': products_list})
+    
+    elif request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            product_id = insert_product(
+                name=data.get('name'),
+                source_id=data.get('source_id')
+            )
+            return JsonResponse({'status': 'success', 'message': f'Product inserted: {product_id}'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+
+@session_name_required
+def api_mongodb_product_detail(request, product_id):
+    """API để xem/update/delete product cụ thể"""
+    if request.method == 'GET':
+        product = get_product_by_id(product_id)
+        if product:
+            product['_id'] = str(product['_id'])
+            return JsonResponse({'status': 'success', 'data': product})
+        return JsonResponse({'status': 'error', 'message': 'Product not found'}, status=404)
+    
+    elif request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            modified = update_product(product_id, **data)
+            return JsonResponse({'status': 'success', 'message': f'Product updated: {modified} documents'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+    
+    elif request.method == 'DELETE':
+        try:
+            deleted = delete_product(product_id)
+            return JsonResponse({'status': 'success', 'message': f'Product deleted: {deleted} documents'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+
+@session_name_required
+def api_mongodb_transactions(request):
+    """API để quản lý transactions trong MongoDB"""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            transaction_id = insert_transaction(
+                material_id=data.get('material_id'),
+                transaction_type=data.get('type'),  # 'IN' or 'OUT'
+                quantity=data.get('quantity'),
+                notes=data.get('notes', '')
+            )
+            return JsonResponse({'status': 'success', 'message': f'Transaction inserted: {transaction_id}'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+
+@session_name_required
+def api_mongodb_material_transactions(request, material_id):
+    """API để lấy tất cả transactions của một material"""
+    if request.method == 'GET':
+        transactions = get_transactions_by_material(material_id)
+        transactions_list = []
+        for trans in transactions:
+            trans['_id'] = str(trans['_id'])
+            trans['date'] = trans['date'].isoformat() if hasattr(trans['date'], 'isoformat') else str(trans['date'])
+            transactions_list.append(trans)
+        return JsonResponse({'status': 'success', 'data': transactions_list})
+
+
+@session_name_required
+def api_mongodb_test(request):
+    """Test API - Demo insert, update, delete, query"""
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        
+        try:
+            if action == 'insert_sample':
+                # Insert sample material
+                mat_id = insert_material(
+                    name='Sample Material',
+                    on_hand=100,
+                    holding_cost=1.5,
+                    ordering_cost=50,
+                    price_cost=25.0
+                )
+                return JsonResponse({'status': 'success', 'message': f'✅ Inserted sample material: {mat_id}'})
+            
+            elif action == 'get_all':
+                # Get all materials
+                materials = get_all_materials()
+                return JsonResponse({'status': 'success', 'count': len(materials), 'data': [{'_id': str(m['_id']), 'name': m.get('name')} for m in materials]})
+            
+            elif action == 'update_sample':
+                # Update first material
+                materials = get_all_materials()
+                if materials:
+                    first_mat = materials[0]
+                    modified = update_material(str(first_mat['_id']), on_hand=200, price_cost=30.0)
+                    return JsonResponse({'status': 'success', 'message': f'✅ Updated {modified} materials'})
+                return JsonResponse({'status': 'error', 'message': 'No materials found'})
+            
+            elif action == 'delete_sample':
+                # Delete last material
+                materials = get_all_materials()
+                if materials:
+                    last_mat = materials[-1]
+                    deleted = delete_material(str(last_mat['_id']))
+                    return JsonResponse({'status': 'success', 'message': f'✅ Deleted {deleted} materials'})
+                return JsonResponse({'status': 'error', 'message': 'No materials found'})
+            
+            return JsonResponse({'status': 'error', 'message': 'Invalid action'})
+        
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+    
+    return JsonResponse({'status': 'error', 'message': 'Only POST allowed'})
