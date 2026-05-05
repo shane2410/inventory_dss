@@ -579,13 +579,19 @@ def forecast(request):
     all_boms = BOM.objects.select_related('material', 'product')
     
     # 🔥 FIX: Use safe defaults - SKIP expensive forecasting on page load
-    # Only forecast if user selected a specific product (POST), not for all products
+    # Keep original theory for selected product by reusing computed forecast_7
     product_forecasts = {}
     if request.method == 'POST' and selected_product:
-        # Only forecast the selected product when user explicitly requests it
         try:
-            mean, std, _, _, _, _ = forecast_product(selected_product.id)
-            product_forecasts[selected_product.id] = (mean, std, [0]*7)
+            if product_result is not None:
+                product_forecasts[selected_product.id] = (
+                    float(product_result.get("mean", 0) or 0),
+                    float(product_result.get("std", 0) or 0),
+                    [float(x or 0) for x in (forecast_7 or [0] * 7)],
+                )
+            else:
+                mean, std, product_forecast_7, _, _, _ = forecast_product(selected_product.id)
+                product_forecasts[selected_product.id] = (mean, std, product_forecast_7)
         except Exception as e:
             print(f"Forecast error: {e}")
     
