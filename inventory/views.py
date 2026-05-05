@@ -619,38 +619,52 @@ def forecast(request):
             print(f"Forecast error: {e}")
     
     # Use safe defaults for material aggregation (no forecasting on page load)
-    for bom in all_boms:
-        p_mean, p_std, p_f7 = product_forecasts.get(bom.product_id, (0, 0, [0]*7))
-        material = bom.material
-        material_key = material.id
-
-        material_dict[material_key]["material"] = material.name
-        material_dict[material_key]["material_id"] = material.source_id or f"NVL{material.id}"
-
-        material_dict[material_key]["mean"] += p_mean * bom.quantity_per_unit
-        material_dict[material_key]["variance"] += (p_std * bom.quantity_per_unit) ** 2
-
-        for i in range(7):
-            material_dict[material_key]["forecast_7"][i] += p_f7[i] * bom.quantity_per_unit
-
-    # convert
-    # 🔥 chỉ lấy material thuộc product đang chọn
-    selected_material_ids = set()
+    selected_boms = []
+    shared_boms = []
     if selected_product:
-        selected_material_ids = set(
-            BOM.objects.filter(product=selected_product).values_list('material_id', flat=True)
+        selected_boms = BOM.objects.filter(product=selected_product).select_related('material')
+        selected_material_ids = set(selected_boms.values_list('material_id', flat=True))
+        shared_boms = list(
+            BOM.objects.filter(material_id__in=selected_material_ids)
+            .exclude(product=selected_product)
+            .select_related('material', 'product')
         )
+    else:
+        selected_material_ids = set()
+
+    shared_boms_by_material = {}
+    for bom in shared_boms:
+        shared_boms_by_material.setdefault(bom.material_id, []).append(bom)
 
     material_results = []
+    if selected_product:
+        selected_mean, selected_std, selected_forecast_7 = product_forecasts.get(selected_product.id, (0, 0, [0]*7))
 
-    for material_id, data in material_dict.items():
-        if material_id in selected_material_ids:  # 👈 CHỈ HIỂN THỊ MATERIAL CỦA PRODUCT ĐANG CHỌN
+        for bom in selected_boms:
+            material = bom.material
+            quantity = bom.quantity_per_unit or 0
+
+            material_mean = selected_mean * quantity
+            material_variance = (selected_std * quantity) ** 2
+            material_forecast_7 = [x * quantity for x in selected_forecast_7]
+
+            for other_bom in shared_boms_by_material.get(material.id, []):
+                other_mean, other_std, other_forecast_7 = product_forecasts.get(
+                    other_bom.product_id,
+                    (0, 0, [0] * 7)
+                )
+                other_quantity = other_bom.quantity_per_unit or 0
+                material_mean += other_mean * other_quantity
+                material_variance += (other_std * other_quantity) ** 2
+                for i in range(7):
+                    material_forecast_7[i] += other_forecast_7[i] * other_quantity
+
             material_results.append({
-                "material": data["material"],
-                "material_id": data["material_id"],
-                "mean": round(data["mean"], 2),
-                "std": round(math.sqrt(data["variance"]), 2),
-                "forecast_7": [round(x, 2) for x in data["forecast_7"]]
+                "material": material.name,
+                "material_id": material.source_id or f"NVL{material.id}",
+                "mean": round(material_mean, 2),
+                "std": round(math.sqrt(material_variance), 2),
+                "forecast_7": [round(x, 2) for x in material_forecast_7]
             })
 
     # =========================
