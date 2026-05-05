@@ -234,15 +234,6 @@ def build_inventory_alert_recommendations():
 
 
 def build_dashboard_recommendations(limit=8):
-    if os.getenv('USE_DJONGO') == '1':
-        return [], {
-            "urgent": 0,
-            "medium": 0,
-            "low": 0,
-            "order": 0,
-            "safe": Material.objects.count(),
-        }
-
     alerts, summary = build_inventory_alert_recommendations()
     items = []
 
@@ -274,4 +265,4 @@ def build_dashboard_recommendations(limit=8):
             },
         })
 
-    return items, summary
+    return items[:limit], summary
