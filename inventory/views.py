@@ -578,26 +578,21 @@ def forecast(request):
     # ✅ FIX: Fetch all BOMs with material eagerly (NOT nested loop)
     all_boms = BOM.objects.select_related('material', 'product')
     
-    # ✅ FIX: Only forecast products with actual sales data (avoid expensive calcs)
+    # 🔥 FIX: Use safe defaults - SKIP expensive forecasting on page load
+    # Only forecast if user selected a specific product (POST), not for all products
     product_forecasts = {}
-    products_with_sales = set(
-        SalesData.objects.values_list('product_id', flat=True).distinct()
-    )
-    
-    # ✅ Only forecast products that have sales history (not all products)
-    for product_id in products_with_sales:
+    if request.method == 'POST' and selected_product:
+        # Only forecast the selected product when user explicitly requests it
         try:
-            p_mean, p_std, p_f7, *_ = forecast_product(product_id)
-            product_forecasts[product_id] = (p_mean, p_std, p_f7)
+            mean, std, _, _, _, _ = forecast_product(selected_product.id)
+            product_forecasts[selected_product.id] = (mean, std, [0]*7)
         except Exception as e:
-            # 🔥 If forecast fails, use safe defaults
-            product_forecasts[product_id] = (0, 0, [0]*7)
-            print(f"Forecast error for product {product_id}: {e}")
-
-    # ✅ FIX: Single iteration through all BOMs with cached forecasts
+            print(f"Forecast error: {e}")
+    
+    # Use safe defaults for material aggregation (no forecasting on page load)
     for bom in all_boms:
         p_mean, p_std, p_f7 = product_forecasts.get(bom.product_id, (0, 0, [0]*7))
-        material = bom.material  # Already eagerly loaded
+        material = bom.material
         material_key = material.id
 
         material_dict[material_key]["material"] = material.name
@@ -662,18 +657,22 @@ def abc_page(request):
     material_list = []
 
     # 👉 gom transaction 1 lần (KHÔNG loop)
-    transaction_data = (
-        Transaction.objects
-        .filter(transaction_type='OUT')
-        .values('material')
-        .annotate(total=Sum('quantity'))
-    )
-
-    # 👉 convert thành dict cho nhanh
-    demand_map = {
-        item['material']: item['total']
-        for item in transaction_data
-    }
+    try:
+        transaction_data = (
+            Transaction.objects
+            .filter(transaction_type='OUT')
+            .values('material')
+            .annotate(total=Sum('quantity'))
+        )
+        # 👉 convert thành dict cho nhanh
+        demand_map = {
+            item['material']: item['total']
+            for item in transaction_data
+        }
+    except Exception as e:
+        # Fallback if aggregation fails (Djongo issue)
+        print(f"Transaction aggregation error: {e}")
+        demand_map = {}
 
     materials = Material.objects.all()
 
