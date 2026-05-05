@@ -8,8 +8,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Get MongoDB URI from environment or use local
-MONGODB_URI = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017')
+# Get MongoDB URI from environment or use local.
+# Prefer the deployment variable name already used in render.yaml.
+MONGODB_URI = os.environ.get('MONGO_URI') or os.environ.get('MONGODB_URI') or 'mongodb://localhost:27017'
 DB_NAME = 'inventory_dss'
 
 class MongoDBConnection:
