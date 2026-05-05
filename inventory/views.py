@@ -579,7 +579,8 @@ def forecast(request):
     all_boms = BOM.objects.select_related('material', 'product')
     
     # 🔥 FIX: Use safe defaults - SKIP expensive forecasting on page load
-    # Keep original theory for selected product by reusing computed forecast_7
+    # When user requests analysis, build forecasts for all products with sales
+    # so shared materials can be aggregated correctly across products.
     product_forecasts = {}
     if request.method == 'POST' and selected_product:
         try:
@@ -592,6 +593,17 @@ def forecast(request):
             else:
                 mean, std, product_forecast_7, _, _, _ = forecast_product(selected_product.id)
                 product_forecasts[selected_product.id] = (mean, std, product_forecast_7)
+
+            products_with_sales = SalesData.objects.values_list('product_id', flat=True).distinct()
+            for product_id in products_with_sales:
+                if product_id in product_forecasts:
+                    continue
+
+                try:
+                    mean, std, product_forecast_7, _, _, _ = forecast_product(product_id)
+                    product_forecasts[product_id] = (mean, std, product_forecast_7)
+                except Exception as e:
+                    print(f"Forecast error for product {product_id}: {e}")
         except Exception as e:
             print(f"Forecast error: {e}")
     
