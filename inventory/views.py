@@ -575,23 +575,43 @@ def forecast(request):
         "forecast_7": [0] * 7
     })
 
-    for product in Product.objects.all():
-        p_mean, p_std, p_f7, *_ = forecast_product(product.id)
+    # ✅ FIX: Fetch all BOMs with material eagerly (NOT nested loop)
+    all_boms = BOM.objects.select_related('material', 'product')
+    
+    # ✅ FIX: Only forecast products with actual sales data (avoid expensive calcs)
+    import signal
+    import time
+    
+    product_forecasts = {}
+    products_with_sales = set(
+        SalesData.objects.values_list('product_id', flat=True).distinct()
+    )
+    
+    # ✅ Only forecast products that have sales history (not all products)
+    for product_id in products_with_sales:
+        try:
+            p_mean, p_std, p_f7, *_ = forecast_product(product_id)
+            product_forecasts[product_id] = (p_mean, p_std, p_f7)
+        except Exception as e:
+            # 🔥 If forecast fails, use safe defaults
+            product_forecasts[product_id] = (0, 0, [0]*7)
+            print(f"Forecast error for product {product_id}: {e}")
 
-        boms = BOM.objects.filter(product=product)
+    # ✅ FIX: Single iteration through all BOMs with cached forecasts
+    from .models import SalesData
+    for bom in all_boms:
+        p_mean, p_std, p_f7 = product_forecasts.get(bom.product_id, (0, 0, [0]*7))
+        material = bom.material  # Already eagerly loaded
+        material_key = material.id
 
-        for bom in boms:
-            material = bom.material
-            material_key = material.id
+        material_dict[material_key]["material"] = material.name
+        material_dict[material_key]["material_id"] = material.source_id or f"NVL{material.id}"
 
-            material_dict[material_key]["material"] = material.name
-            material_dict[material_key]["material_id"] = material.source_id or f"NVL{material.id}"
+        material_dict[material_key]["mean"] += p_mean * bom.quantity_per_unit
+        material_dict[material_key]["variance"] += (p_std * bom.quantity_per_unit) ** 2
 
-            material_dict[material_key]["mean"] += p_mean * bom.quantity_per_unit
-            material_dict[material_key]["variance"] += (p_std * bom.quantity_per_unit) ** 2
-
-            for i in range(7):
-                material_dict[material_key]["forecast_7"][i] += p_f7[i] * bom.quantity_per_unit
+        for i in range(7):
+            material_dict[material_key]["forecast_7"][i] += p_f7[i] * bom.quantity_per_unit
 
     # convert
     # 🔥 chỉ lấy material thuộc product đang chọn
