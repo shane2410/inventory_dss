@@ -174,11 +174,17 @@ def dashboard(request):
     # TOP 5 PRODUCTS BY REVENUE (unit_price derived from BOM materials)
     # revenue = unit_price * total_quantity_sold
     # =========================
-    sales_agg = list(
-        SalesData.objects
-        .values('product_id', 'product__name')
-        .annotate(total_quantity=Sum('quantity'))
-    )
+    sales_totals = {}
+    for sale in SalesData.objects.select_related('product').all():
+        product_id = sale.product_id
+        product_name = sale.product.name if sale.product else str(product_id)
+        bucket = sales_totals.setdefault(
+            product_id,
+            {'product_id': product_id, 'product__name': product_name, 'total_quantity': 0},
+        )
+        bucket['total_quantity'] += float(sale.quantity or 0)
+
+    sales_agg = list(sales_totals.values())
 
     product_revenues = []
     total_revenue = 0.0
@@ -242,17 +248,9 @@ def dashboard(request):
     # =========================
     # ABC VALUE SUMMARY (TRANSACTION OUT)
     # =========================
-    transaction_out_data = (
-        Transaction.objects
-        .filter(transaction_type='OUT')
-        .values('material')
-        .annotate(total_quantity=Sum('quantity'))
-    )
-
-    demand_map = {
-        item['material']: item['total_quantity'] or 0
-        for item in transaction_out_data
-    }
+    demand_map = {}
+    for transaction in Transaction.objects.filter(transaction_type='OUT').select_related('material').all():
+        demand_map[transaction.material_id] = demand_map.get(transaction.material_id, 0) + float(transaction.quantity or 0)
 
     abc_material_list = []
     for material in materials:
@@ -291,7 +289,16 @@ def dashboard(request):
     selected_abc = request.GET.get('abc', 'ALL').upper()
     selected_action = request.GET.get('action', 'ALL').upper()
 
-    recommendations_all, recommendation_summary = build_dashboard_recommendations(limit=200)
+    try:
+        recommendations_all, recommendation_summary = build_dashboard_recommendations(limit=200)
+    except Exception:
+        recommendations_all, recommendation_summary = [], {
+            'urgent': 0,
+            'medium': 0,
+            'low': 0,
+            'order': 0,
+            'safe': materials.count(),
+        }
     recommendations_filtered_all = recommendations_all
     recommendations = recommendations_filtered_all
     recommendation_display = f"{len(recommendations)} URGENT"
@@ -327,7 +334,16 @@ def recommendation_api(request):
     selected_abc = request.GET.get('abc', 'ALL').upper()
     selected_action = request.GET.get('action', 'ALL').upper()
 
-    recommendations, summary = build_dashboard_recommendations(limit=200)
+    try:
+        recommendations, summary = build_dashboard_recommendations(limit=200)
+    except Exception:
+        recommendations, summary = [], {
+            'urgent': 0,
+            'medium': 0,
+            'low': 0,
+            'order': 0,
+            'safe': Material.objects.count(),
+        }
     filtered = _apply_recommendation_filters(
         recommendations,
         urgency=selected_urgency,

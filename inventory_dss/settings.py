@@ -93,8 +93,8 @@ use_djongo = os.getenv('USE_DJONGO') == '1'
 mongo_uri = os.getenv('MONGO_URI')
 mongo_name = os.getenv('MONGO_DB_NAME', 'inventory_db')
 
-# If requested, use Djongo (keeps Django ORM/migrations, backed by MongoDB)
-if use_djongo or (mongo_uri and mongo_uri.startswith('mongodb')):
+# Use Djongo only when a real MongoDB Atlas URI is present.
+if mongo_uri and mongo_uri.startswith('mongodb'):
     DATABASES = {
         'default': {
             'ENGINE': 'djongo',

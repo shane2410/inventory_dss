@@ -1,4 +1,5 @@
 import math
+import os
 from collections import defaultdict
 
 from .models import BOM, Material, Product
@@ -98,6 +99,15 @@ def build_inventory_alert_recommendations():
     This follows the alert page logic (ip < rop) and maps the resulting
     materials directly to ABC-based urgency tiers.
     """
+    if os.getenv('USE_DJONGO') == '1':
+        return [], {
+            "urgent": 0,
+            "medium": 0,
+            "low": 0,
+            "order": 0,
+            "safe": Material.objects.count(),
+        }
+
     demand_stats = defaultdict(lambda: {"mean": 0.0, "variance": 0.0})
 
     for product in Product.objects.all():
@@ -194,6 +204,15 @@ def build_inventory_alert_recommendations():
 
 
 def build_dashboard_recommendations(limit=8):
+    if os.getenv('USE_DJONGO') == '1':
+        return [], {
+            "urgent": 0,
+            "medium": 0,
+            "low": 0,
+            "order": 0,
+            "safe": Material.objects.count(),
+        }
+
     alerts, summary = build_inventory_alert_recommendations()
     items = []
 
