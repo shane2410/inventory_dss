@@ -579,9 +579,6 @@ def forecast(request):
     all_boms = BOM.objects.select_related('material', 'product')
     
     # ✅ FIX: Only forecast products with actual sales data (avoid expensive calcs)
-    import signal
-    import time
-    
     product_forecasts = {}
     products_with_sales = set(
         SalesData.objects.values_list('product_id', flat=True).distinct()
@@ -598,7 +595,6 @@ def forecast(request):
             print(f"Forecast error for product {product_id}: {e}")
 
     # ✅ FIX: Single iteration through all BOMs with cached forecasts
-    from .models import SalesData
     for bom in all_boms:
         p_mean, p_std, p_f7 = product_forecasts.get(bom.product_id, (0, 0, [0]*7))
         material = bom.material  # Already eagerly loaded
@@ -615,9 +611,11 @@ def forecast(request):
 
     # convert
     # 🔥 chỉ lấy material thuộc product đang chọn
-    selected_material_ids = set(
-        BOM.objects.filter(product=selected_product).values_list('material_id', flat=True)
-    )
+    selected_material_ids = set()
+    if selected_product:
+        selected_material_ids = set(
+            BOM.objects.filter(product=selected_product).values_list('material_id', flat=True)
+        )
 
     material_results = []
 
