@@ -578,9 +578,9 @@ def forecast(request):
     # ✅ FIX: Fetch all BOMs with material eagerly (NOT nested loop)
     all_boms = BOM.objects.select_related('material', 'product')
     
-    # 🔥 FIX: Use safe defaults - SKIP expensive forecasting on page load
-    # When user requests analysis, build forecasts for all products with sales
-    # so shared materials can be aggregated correctly across products.
+    # 🔥 FIX: Use safe defaults - SKIP expensive forecasting on page load.
+    # When user requests analysis, build forecasts only for the selected
+    # product and other products that share BOM materials with it.
     product_forecasts = {}
     if request.method == 'POST' and selected_product:
         try:
@@ -594,8 +594,19 @@ def forecast(request):
                 mean, std, product_forecast_7, _, _, _ = forecast_product(selected_product.id)
                 product_forecasts[selected_product.id] = (mean, std, product_forecast_7)
 
-            products_with_sales = SalesData.objects.values_list('product_id', flat=True).distinct()
-            for product_id in products_with_sales:
+            selected_material_ids = set(
+                BOM.objects.filter(product=selected_product).values_list('material_id', flat=True)
+            )
+
+            shared_product_ids = set()
+            if selected_material_ids:
+                shared_product_ids = set(
+                    BOM.objects.filter(material_id__in=selected_material_ids)
+                    .values_list('product_id', flat=True)
+                    .distinct()
+                )
+
+            for product_id in shared_product_ids:
                 if product_id in product_forecasts:
                     continue
 
@@ -603,7 +614,7 @@ def forecast(request):
                     mean, std, product_forecast_7, _, _, _ = forecast_product(product_id)
                     product_forecasts[product_id] = (mean, std, product_forecast_7)
                 except Exception as e:
-                    print(f"Forecast error for product {product_id}: {e}")
+                    print(f"Forecast error for shared product {product_id}: {e}")
         except Exception as e:
             print(f"Forecast error: {e}")
     
