@@ -142,9 +142,17 @@ def build_inventory_alert_recommendations():
                 product_forecasts[product_id] = (0.0, 0.0)
 
     # ✅ FIX: Fetch all BOMs with eager loading (NOT nested loops per product)
-    all_boms = BOM.objects.select_related("material", "product")
-
+    # DEDUPLICATE by (material_id, product_id) to avoid double-counting
+    all_boms = list(BOM.objects.select_related("material", "product"))
+    seen_bom_pairs = set()
+    deduped_boms = []
     for bom in all_boms:
+        key = (bom.material_id, bom.product_id)
+        if key not in seen_bom_pairs:
+            seen_bom_pairs.add(key)
+            deduped_boms.append(bom)
+
+    for bom in deduped_boms:
         mean, std = product_forecasts.get(bom.product_id, (0.0, 0.0))
         qty = float(bom.quantity_per_unit or 0)
         if qty <= 0:
@@ -165,8 +173,8 @@ def build_inventory_alert_recommendations():
 
     alerts = []
 
-    # ✅ FIX: Iterate through cached BOMs instead of querying again
-    for bom in all_boms:
+    # ✅ FIX: Use deduped BOMs to avoid duplicate alerts
+    for bom in deduped_boms:
         mean, std = product_forecasts.get(bom.product_id, (0.0, 0.0))
         material = bom.material  # Already loaded
         product = bom.product  # Already loaded
