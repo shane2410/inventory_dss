@@ -636,13 +636,13 @@ def forecast(request):
 
     # Aggregate duplicate BOM rows by material/product so the view is stable even if
     # the database contains repeated BOM entries.
+    # For each material, keep the FIRST quantity (don't sum duplicates).
     selected_quantities = {}
     selected_materials = {}
     for bom in selected_boms:
-        selected_quantities[bom.material_id] = (
-            selected_quantities.get(bom.material_id, 0) + (bom.quantity_per_unit or 0)
-        )
-        selected_materials[bom.material_id] = bom.material
+        if bom.material_id not in selected_quantities:
+            selected_quantities[bom.material_id] = bom.quantity_per_unit or 0
+            selected_materials[bom.material_id] = bom.material
 
     shared_quantities_by_material = {}
     shared_products_by_material = {}
@@ -650,12 +650,12 @@ def forecast(request):
         mat_id = bom.material_id
         prod_id = bom.product_id
         qty = bom.quantity_per_unit or 0
-        shared_quantities_by_material.setdefault(mat_id, {})
-        shared_quantities_by_material[mat_id][prod_id] = (
-            shared_quantities_by_material[mat_id].get(prod_id, 0) + qty
-        )
-        shared_products_by_material.setdefault(mat_id, {})
-        shared_products_by_material[mat_id][prod_id] = bom.product
+        if mat_id not in shared_quantities_by_material:
+            shared_quantities_by_material[mat_id] = {}
+        if prod_id not in shared_quantities_by_material[mat_id]:
+            shared_quantities_by_material[mat_id][prod_id] = qty
+            shared_products_by_material.setdefault(mat_id, {})
+            shared_products_by_material[mat_id][prod_id] = bom.product
 
     material_results = []
     if selected_product:
