@@ -104,11 +104,22 @@ def build_inventory_alert_recommendations():
     # 🔥 FIX: Skip expensive forecasting in Djongo mode - use defaults
     from .models import SalesData
     
-    # In Djongo mode, don't try to forecast all products (causes timeout)
-    # Just use safe defaults (0 demand) to calculate ROP with base demand
+    # In Djongo mode, avoid heavy statsmodels forecasting for all products.
+    # Use a lightweight SalesData-based demand estimate per product.
     if os.getenv('USE_DJONGO') == '1':
-        # Use safe defaults - no forecasting on Djongo
         product_forecasts = {}
+        sales_by_product = defaultdict(list)
+
+        for pid, qty in SalesData.objects.values_list('product_id', 'quantity'):
+            sales_by_product[pid].append(float(qty or 0))
+
+        for pid, values in sales_by_product.items():
+            if not values:
+                continue
+            mean = sum(values) / len(values)
+            variance = sum((v - mean) ** 2 for v in values) / len(values)
+            std = math.sqrt(max(variance, 0.0))
+            product_forecasts[pid] = (max(mean, 0.0), max(std, 0.0))
     else:
         # Only forecast products with actual sales data (not all products)
         product_forecasts = {}
