@@ -622,8 +622,10 @@ def forecast(request):
     selected_boms = []
     shared_boms = []
     if selected_product:
-        selected_boms = BOM.objects.filter(product=selected_product).select_related('material')
-        selected_material_ids = set(selected_boms.values_list('material_id', flat=True))
+        selected_boms = list(
+            BOM.objects.filter(product=selected_product).select_related('material')
+        )
+        selected_material_ids = set(bom.material_id for bom in selected_boms)
         shared_boms = list(
             BOM.objects.filter(material_id__in=selected_material_ids)
             .exclude(product=selected_product)
@@ -632,28 +634,47 @@ def forecast(request):
     else:
         selected_material_ids = set()
 
-    shared_boms_by_material = {}
+    # Aggregate duplicate BOM rows by material/product so the view is stable even if
+    # the database contains repeated BOM entries.
+    selected_quantities = {}
+    selected_materials = {}
+    for bom in selected_boms:
+        selected_quantities[bom.material_id] = (
+            selected_quantities.get(bom.material_id, 0) + (bom.quantity_per_unit or 0)
+        )
+        selected_materials[bom.material_id] = bom.material
+
+    shared_quantities_by_material = {}
+    shared_products_by_material = {}
     for bom in shared_boms:
-        shared_boms_by_material.setdefault(bom.material_id, []).append(bom)
+        mat_id = bom.material_id
+        prod_id = bom.product_id
+        qty = bom.quantity_per_unit or 0
+        shared_quantities_by_material.setdefault(mat_id, {})
+        shared_quantities_by_material[mat_id][prod_id] = (
+            shared_quantities_by_material[mat_id].get(prod_id, 0) + qty
+        )
+        shared_products_by_material.setdefault(mat_id, {})
+        shared_products_by_material[mat_id][prod_id] = bom.product
 
     material_results = []
     if selected_product:
-        selected_mean, selected_std, selected_forecast_7 = product_forecasts.get(selected_product.id, (0, 0, [0]*7))
+        selected_mean, selected_std, selected_forecast_7 = product_forecasts.get(
+            selected_product.id,
+            (0, 0, [0] * 7)
+        )
 
-        for bom in selected_boms:
-            material = bom.material
-            quantity = bom.quantity_per_unit or 0
-
+        for material_id, quantity in selected_quantities.items():
+            material = selected_materials.get(material_id)
             material_mean = selected_mean * quantity
             material_variance = (selected_std * quantity) ** 2
             material_forecast_7 = [x * quantity for x in selected_forecast_7]
 
-            for other_bom in shared_boms_by_material.get(material.id, []):
+            for other_product_id, other_quantity in shared_quantities_by_material.get(material_id, {}).items():
                 other_mean, other_std, other_forecast_7 = product_forecasts.get(
-                    other_bom.product_id,
+                    other_product_id,
                     (0, 0, [0] * 7)
                 )
-                other_quantity = other_bom.quantity_per_unit or 0
                 material_mean += other_mean * other_quantity
                 material_variance += (other_std * other_quantity) ** 2
                 for i in range(7):
