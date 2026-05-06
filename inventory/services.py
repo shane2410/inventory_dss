@@ -56,22 +56,26 @@ def forecast_product(product_id):
             initialization_method="estimated"
         )
 
-        # 🔥 Limit optimization iterations to prevent timeout on Render
-        fit = model.fit(optimized=True, disp=False, maxiter=50)
+        # Use a simple, compatible fit call; older/newer statsmodels
+        # versions may not accept disp/maxiter kwargs.
+        fit = model.fit(optimized=True)
 
         forecast = fit.forecast(7)
+        # ensure forecast is a pandas Series so downstream code can use .values
+        forecast = pd.Series(forecast)
 
-        mean = forecast.mean()
-        std = series.std()
+        mean = float(forecast.mean())
+        std = float(series.std())
 
         forecast_list = forecast.tolist()
 
     except Exception as e:
         print("Forecast error:", e)
 
-        mean = series.mean()
-        std = series.std(ddof=1)
-        forecast_list = [mean] * 7  # 🔥 phải ở đây
+        mean = float(series.mean())
+        std = float(series.std(ddof=1))
+        forecast_list = [mean] * 7  # fallback forecast values
+        forecast = pd.Series(forecast_list)
 
     if np.isnan(std) or std < 0:
         std = 0
