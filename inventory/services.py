@@ -1,7 +1,5 @@
 import pandas as pd
 import numpy as np
-import math
-import os
 from collections import defaultdict
 from inventory.models import SalesData, BOM, Material, Product
 
@@ -104,40 +102,34 @@ def aggregate_material_demand():
 
     from .models import SalesData
 
-    # In Djongo / Render mode, avoid running statsmodels for all products —
-    # build lightweight estimates from SalesData when requested.
     product_forecasts = {}
-    if os.getenv("USE_DJONGO") == "1":
-        sales_by_product = defaultdict(list)
-        for product_id, quantity in SalesData.objects.values_list('product_id', 'quantity'):
-            sales_by_product[product_id].append(float(quantity or 0))
+    products_with_sales = set(
+        SalesData.objects.values_list('product_id', flat=True).distinct()
+    )
 
-        for product_id, values in sales_by_product.items():
-            if not values:
-                continue
-
-            mean = sum(values) / len(values)
-            variance = sum((value - mean) ** 2 for value in values) / len(values)
-            std = math.sqrt(max(variance, 0.0))
+    for product_id in products_with_sales:
+        try:
+            mean, std, _, _, _, _ = forecast_product(product_id)
+            product_forecasts[product_id] = (
+                max(float(mean or 0), 0.0),
+                max(float(std or 0), 0.0),
+            )
+        except Exception:
+            values = list(
+                SalesData.objects.filter(product_id=product_id)
+                .values_list('quantity', flat=True)
+            )
+            if values:
+                mean = sum(float(q or 0) for q in values) / len(values)
+                variance = sum((float(q or 0) - mean) ** 2 for q in values) / len(values)
+                std = float(np.sqrt(max(variance, 0.0)))
+            else:
+                mean, std = 0.0, 0.0
 
             product_forecasts[product_id] = (
                 max(float(mean or 0), 0.0),
                 max(float(std or 0), 0.0),
             )
-    else:
-        products_with_sales = set(
-            SalesData.objects.values_list('product_id', flat=True).distinct()
-        )
-
-        for product_id in products_with_sales:
-            try:
-                mean, std, _, _, _, _ = forecast_product(product_id)
-                product_forecasts[product_id] = (
-                    max(float(mean or 0), 0.0),
-                    max(float(std or 0), 0.0),
-                )
-            except Exception:
-                product_forecasts[product_id] = (0.0, 0.0)
 
     # Fetch BOMs once and deduplicate by (material, product) to avoid double-count
     all_boms = list(BOM.objects.select_related("material", "product"))
