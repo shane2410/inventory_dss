@@ -90,7 +90,7 @@ WSGI_APPLICATION = 'inventory_dss.wsgi.application'
 # 3) SQLite fallback for local development
 database_url = os.getenv('DATABASE_URL')
 use_djongo = os.getenv('USE_DJONGO') == '1'
-mongo_uri = os.getenv('MONGO_URI')
+mongo_uri = os.getenv('MONGO_URI') or os.getenv('MONGODB_URI')
 mongo_name = os.getenv('MONGO_DB_NAME', 'inventory_db')
 
 # Use Djongo only when a real MongoDB Atlas URI is present.

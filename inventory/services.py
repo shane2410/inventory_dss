@@ -225,18 +225,28 @@ def run_dss(product_id):
 
     results = []
 
-    boms = BOM.objects.filter(product=product)
+    boms = list(BOM.objects.filter(product=product))
 
-    if not boms.exists():
+    if not boms:
         print("NO BOM FOUND")
         return results
+
+    # Deduplicate BOM rows by material for one product to avoid duplicate inventory rows
+    material_bom_map = {}
+    for bom in boms:
+        if bom.material_id not in material_bom_map:
+            material_bom_map[bom.material_id] = bom
+        else:
+            material_bom_map[bom.material_id].quantity_per_unit += bom.quantity_per_unit
+
+    unique_boms = list(material_bom_map.values())
 
     # forecast 1 lần
     mean, std, forecast_7,_,_,_ = forecast_product(product_id)
 
     print("FORECAST:", mean, std)
 
-    for bom in boms:
+    for bom in unique_boms:
         material = bom.material
         # 🔥 convert sang demand của material
         material_mean = mean * bom.quantity_per_unit
@@ -274,5 +284,4 @@ def run_dss(product_id):
     print("RESULT:", results)
 
     return results
-import pandas as pd
 

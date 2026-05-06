@@ -103,43 +103,32 @@ def build_inventory_alert_recommendations():
 
     from .models import SalesData
 
-    # In Djongo mode, avoid heavy statsmodels forecasting for all products.
-    # Fall back to a lightweight SalesData-based estimate so the alert page
-    # still has non-zero demand and can produce meaningful alerts.
-    if os.getenv('USE_DJONGO') == '1':
-        product_forecasts = {}
-        sales_by_product = defaultdict(list)
+    # Forecast product demand consistently for alert generation.
+    # If statsmodels forecasting fails, fall back to raw sales averages.
+    product_forecasts = {}
+    products_with_sales = set(
+        SalesData.objects.values_list('product_id', flat=True).distinct()
+    )
 
-        for product_id, quantity in SalesData.objects.values_list('product_id', 'quantity'):
-            sales_by_product[product_id].append(float(quantity or 0))
-
-        for product_id, values in sales_by_product.items():
-            if not values:
-                continue
-
-            mean = sum(values) / len(values)
-            variance = sum((value - mean) ** 2 for value in values) / len(values)
-            std = math.sqrt(max(variance, 0.0))
-
-            product_forecasts[product_id] = (
-                max(float(mean or 0), 0.0),
-                max(float(std or 0), 0.0),
+    for product_id in products_with_sales:
+        try:
+            mean, std, _, _, _, _ = forecast_product(product_id)
+        except Exception:
+            values = list(
+                SalesData.objects.filter(product_id=product_id)
+                .values_list('quantity', flat=True)
             )
-    else:
-        # Only forecast products with actual sales data (not all products)
-        product_forecasts = {}
-        products_with_sales = set(
-            SalesData.objects.values_list('product_id', flat=True).distinct()
+            if values:
+                mean = sum(float(q or 0) for q in values) / len(values)
+                variance = sum((float(q or 0) - mean) ** 2 for q in values) / len(values)
+                std = math.sqrt(max(variance, 0.0))
+            else:
+                mean, std = 0.0, 0.0
+
+        product_forecasts[product_id] = (
+            max(float(mean or 0), 0.0),
+            max(float(std or 0), 0.0),
         )
-        for product_id in products_with_sales:
-            try:
-                mean, std, _, _, _, _ = forecast_product(product_id)
-                product_forecasts[product_id] = (
-                    max(float(mean or 0), 0.0),
-                    max(float(std or 0), 0.0)
-                )
-            except Exception:
-                product_forecasts[product_id] = (0.0, 0.0)
 
     # ✅ FIX: Fetch all BOMs with eager loading (NOT nested loops per product)
     # DEDUPLICATE by (material_id, product_id) to avoid double-counting
@@ -173,18 +162,18 @@ def build_inventory_alert_recommendations():
 
     alerts = []
 
-    # ✅ FIX: Use deduped BOMs to avoid duplicate alerts
-    for bom in deduped_boms:
-        mean, std = product_forecasts.get(bom.product_id, (0.0, 0.0))
-        material = bom.material  # Already loaded
-        product = bom.product  # Already loaded
-        
-        demand = mean * bom.quantity_per_unit
+    # Build one alert per material using aggregated material demand across products.
+    for material in materials:
+        demand = demand_stats[material.id]["mean"]
+        variance = demand_stats[material.id]["variance"]
+        if demand <= 0:
+            continue
+
         ip = material.on_hand + material.on_order
         lead_time = max(material.leadtime, 1)
         z = 1.65
-        material_std = std * bom.quantity_per_unit
-        ss = z * material_std * (lead_time ** 0.5)
+        std = math.sqrt(max(variance, 0.0))
+        ss = z * std * (lead_time ** 0.5)
         rop = demand * lead_time + ss
 
         if ip < rop:
@@ -210,8 +199,8 @@ def build_inventory_alert_recommendations():
 
             alerts.append({
                 "item": item_code,
-                "product": product.name,
-                "material_code": material.source_id or f"NVL{material.id}",
+                "product": None,
+                "material_code": item_code,
                 "material_name": material.name,
                 "ip": round(ip, 2),
                 "rop": round(rop, 2),
