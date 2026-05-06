@@ -4,13 +4,10 @@ from django.contrib.auth import authenticate, login, logout, get_user_model
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Sum
 from openpyxl import Workbook, load_workbook
-from .models import Product, Material, SalesData, Transaction
+from .models import Product, Material, SalesData, Transaction, BOM
 from .forms import ImportDataForm
-from .services import run_dss
-from .services import forecast_product
-from .services import abc_classification, forecast_product
+from .services import aggregate_material_demand, abc_classification, forecast_product, run_dss
 from .recommendations import build_dashboard_recommendations, build_inventory_alert_recommendations
-from .models import Product, BOM
 from datetime import datetime, timedelta, date
 from .permissions import (
     ALL_ROLE_CODES,
@@ -659,33 +656,42 @@ def forecast(request):
 
     material_results = []
     if selected_product:
-        selected_mean, selected_std, selected_forecast_7 = product_forecasts.get(
-            selected_product.id,
-            (0, 0, [0] * 7)
-        )
+        selected_stats = product_forecasts.get(selected_product.id, (0.0, 0.0, [0] * 7))
+        selected_mean = float(selected_stats[0] or 0.0)
+        selected_std = float(selected_stats[1] or 0.0)
+        selected_forecast_7 = [float(x or 0.0) for x in selected_stats[2]]
+
+        material_shared_boms = {}
+        for bom in shared_boms:
+            material_shared_boms.setdefault(bom.material_id, []).append(bom)
 
         for material_id, quantity in selected_quantities.items():
             material = selected_materials.get(material_id)
-            material_mean = selected_mean * quantity
-            material_variance = (selected_std * quantity) ** 2
-            material_forecast_7 = [x * quantity for x in selected_forecast_7]
+            qty = float(quantity or 0)
+            material_mean = selected_mean * qty
+            material_variance = (selected_std * qty) ** 2
+            material_forecast_7 = [round(val * qty, 2) for val in selected_forecast_7]
 
-            for other_product_id, other_quantity in shared_quantities_by_material.get(material_id, {}).items():
-                other_mean, other_std, other_forecast_7 = product_forecasts.get(
-                    other_product_id,
-                    (0, 0, [0] * 7)
-                )
-                material_mean += other_mean * other_quantity
-                material_variance += (other_std * other_quantity) ** 2
-                for i in range(7):
-                    material_forecast_7[i] += other_forecast_7[i] * other_quantity
+            for bom in material_shared_boms.get(material_id, []):
+                other_stats = product_forecasts.get(bom.product_id, (0.0, 0.0, [0] * 7))
+                other_mean = float(other_stats[0] or 0.0)
+                other_std = float(other_stats[1] or 0.0)
+                other_forecast_7 = [float(x or 0.0) for x in other_stats[2]]
+                other_qty = float(bom.quantity_per_unit or 0)
+
+                material_mean += other_mean * other_qty
+                material_variance += (other_std * other_qty) ** 2
+                material_forecast_7 = [
+                    round(current + other_val * other_qty, 2)
+                    for current, other_val in zip(material_forecast_7, other_forecast_7)
+                ]
 
             material_results.append({
                 "material": material.name,
                 "material_id": material.source_id or f"NVL{material.id}",
                 "mean": round(material_mean, 2),
                 "std": round(math.sqrt(material_variance), 2),
-                "forecast_7": [round(x, 2) for x in material_forecast_7]
+                "forecast_7": material_forecast_7,
             })
 
     # =========================

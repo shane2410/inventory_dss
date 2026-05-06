@@ -95,15 +95,7 @@
           {% for p in products %}
           <option
             value="{{ p.id }}"
-            {%
-            if
-            selected_product
-            and
-            p.id=""
-            ="selected_product.id"
-            %}selected{%
-            endif
-            %}
+            {% if selected_product and p.id == selected_product.id %}selected{% endif %}
           >
             {{ p.name }}
           </option>

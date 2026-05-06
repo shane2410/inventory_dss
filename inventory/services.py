@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
-from inventory.models import SalesData, BOM, Material
+from collections import defaultdict
+from inventory.models import SalesData, BOM, Material, Product
 
 
 # =========================
@@ -89,6 +90,36 @@ def forecast_product(product_id):
         mae, rmse, mape = 0, 0, 0
 
     return mean, std, forecast_list, mae, rmse, mape
+
+
+def aggregate_material_demand():
+    demand_stats = defaultdict(lambda: {"mean": 0.0, "variance": 0.0})
+    product_forecasts = {}
+
+    for product in Product.objects.all():
+        mean, std, _, _, _, _ = forecast_product(product.id)
+        product_forecasts[product.id] = (
+            max(float(mean or 0), 0.0),
+            max(float(std or 0), 0.0),
+        )
+
+    all_boms = list(BOM.objects.select_related("material", "product"))
+    seen_bom_pairs = set()
+    for bom in all_boms:
+        key = (bom.product_id, bom.material_id)
+        if key in seen_bom_pairs:
+            continue
+        seen_bom_pairs.add(key)
+
+        mean, std = product_forecasts.get(bom.product_id, (0.0, 0.0))
+        qty = float(bom.quantity_per_unit or 0)
+        if qty <= 0:
+            continue
+
+        demand_stats[bom.material_id]["mean"] += mean * qty
+        demand_stats[bom.material_id]["variance"] += (std * qty) ** 2
+
+    return demand_stats
 
 
 # =========================
@@ -241,16 +272,16 @@ def run_dss(product_id):
 
     unique_boms = list(material_bom_map.values())
 
-    # forecast 1 lần
-    mean, std, forecast_7,_,_,_ = forecast_product(product_id)
-
-    print("FORECAST:", mean, std)
+    # Use aggregated material demand across all products so material-level ROP is
+    # consistent with the global inventory forecast and alert calculations.
+    material_stats = aggregate_material_demand()
 
     for bom in unique_boms:
         material = bom.material
-        # 🔥 convert sang demand của material
-        material_mean = mean * bom.quantity_per_unit
-        material_std = std * bom.quantity_per_unit
+        stats = material_stats.get(material.id, {"mean": 0.0, "variance": 0.0})
+
+        material_mean = stats["mean"]
+        material_std = np.sqrt(max(stats["variance"], 0.0))
 
         inv = inventory_analysis(material, material_mean, material_std)
 
@@ -265,13 +296,13 @@ def run_dss(product_id):
             demand,
             ip,
             rop,
-            ss  # 👈 thêm dòng này
+            ss
         )
 
         results.append({
             "material_id": material.source_id or f"NVL{material.id}",
             "material": material.name,
-            "mean": round(material_mean, 2),  # ✅ đúng
+            "mean": round(material_mean, 2),
             "std": round(material_std, 2),
             "ip": round(ip, 2),
             "rop": round(rop, 2),
@@ -280,8 +311,6 @@ def run_dss(product_id):
             "s": round(best_S, 2),
             "cost": round(min_cost, 2),
         })
-
-    print("RESULT:", results)
 
     return results
 

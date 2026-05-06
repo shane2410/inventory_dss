@@ -5,6 +5,7 @@ from collections import defaultdict
 from .models import BOM, Material, Product
 from .services import (
     abc_classification,
+    aggregate_material_demand,
     forecast_product,
     inventory_analysis,
     optimize_order_quantity,
@@ -44,7 +45,7 @@ def generate_recommendation(item):
     abc_class = str(_read_item_value(item, "ABC_class", "B") or "B").upper()
     avg_daily_demand = float(_read_item_value(item, "avg_daily_demand", 0) or 0)
 
-    should_order = ip <= rop
+    should_order = ip < rop
     action = "ORDER" if should_order else "NO_ORDER"
     order_qty = max(target_stock - ip, 0) if should_order else 0
 
@@ -99,56 +100,7 @@ def build_inventory_alert_recommendations():
     This follows the alert page logic (ip < rop) and maps the resulting
     materials directly to ABC-based urgency tiers.
     """
-    demand_stats = defaultdict(lambda: {"mean": 0.0, "variance": 0.0})
-
-    from .models import SalesData
-
-    # Forecast product demand consistently for alert generation.
-    # If statsmodels forecasting fails, fall back to raw sales averages.
-    product_forecasts = {}
-    products_with_sales = set(
-        SalesData.objects.values_list('product_id', flat=True).distinct()
-    )
-
-    for product_id in products_with_sales:
-        try:
-            mean, std, _, _, _, _ = forecast_product(product_id)
-        except Exception:
-            values = list(
-                SalesData.objects.filter(product_id=product_id)
-                .values_list('quantity', flat=True)
-            )
-            if values:
-                mean = sum(float(q or 0) for q in values) / len(values)
-                variance = sum((float(q or 0) - mean) ** 2 for q in values) / len(values)
-                std = math.sqrt(max(variance, 0.0))
-            else:
-                mean, std = 0.0, 0.0
-
-        product_forecasts[product_id] = (
-            max(float(mean or 0), 0.0),
-            max(float(std or 0), 0.0),
-        )
-
-    # ✅ FIX: Fetch all BOMs with eager loading (NOT nested loops per product)
-    # DEDUPLICATE by (material_id, product_id) to avoid double-counting
-    all_boms = list(BOM.objects.select_related("material", "product"))
-    seen_bom_pairs = set()
-    deduped_boms = []
-    for bom in all_boms:
-        key = (bom.material_id, bom.product_id)
-        if key not in seen_bom_pairs:
-            seen_bom_pairs.add(key)
-            deduped_boms.append(bom)
-
-    for bom in deduped_boms:
-        mean, std = product_forecasts.get(bom.product_id, (0.0, 0.0))
-        qty = float(bom.quantity_per_unit or 0)
-        if qty <= 0:
-            continue
-
-        demand_stats[bom.material_id]["mean"] += mean * qty
-        demand_stats[bom.material_id]["variance"] += (std * qty) ** 2
+    demand_stats = aggregate_material_demand()
 
     materials = list(Material.objects.all())
     abc_input = [
@@ -162,60 +114,58 @@ def build_inventory_alert_recommendations():
 
     alerts = []
 
-    # Build one alert per material using aggregated material demand across products.
     for material in materials:
         demand = demand_stats[material.id]["mean"]
         variance = demand_stats[material.id]["variance"]
-        if demand <= 0:
+
+        material_std = math.sqrt(max(variance, 0.0))
+        inv = inventory_analysis(material, demand, material_std)
+        ip = inv["ip"]
+        ss = inv["ss"]
+        rop = inv["rop"]
+
+        if ip >= rop:
             continue
 
-        ip = material.on_hand + material.on_order
-        lead_time = max(material.leadtime, 1)
-        z = 1.65
-        std = math.sqrt(max(variance, 0.0))
-        ss = z * std * (lead_time ** 0.5)
-        rop = demand * lead_time + ss
+        abc_class = abc_map.get(material.id, "C")
+        urgency = {
+            "A": "URGENT",
+            "B": "MEDIUM",
+            "C": "LOW",
+        }.get(abc_class, "LOW")
 
-        if ip < rop:
-            abc_class = abc_map.get(material.id, "C")
-            urgency = {
-                "A": "URGENT",
-                "B": "MEDIUM",
-                "C": "LOW",
-            }.get(abc_class, "LOW")
+        item_code = material.source_id or f"NVL{material.id}"
 
-            item_code = material.source_id or f"NVL{material.id}"
+        S, Q, cost = optimize_order_quantity(material, demand, ip, rop, ss)
 
-            S, Q, cost = optimize_order_quantity(material, demand, ip, rop, ss)
+        days_left = None
+        if demand > 0:
+            days_left = math.ceil(ip / demand)
 
-            days_left = None
-            if demand > 0:
-                days_left = math.ceil(ip / demand)
+        if days_left is not None:
+            message = f"Tồn kho sắp hết trong {days_left} ngày, cần đặt ngay"
+        else:
+            message = "Cần đặt bổ sung tồn kho theo mức an toàn"
 
-            if days_left is not None:
-                message = f"Tồn kho sắp hết trong {days_left} ngày, cần đặt ngay"
-            else:
-                message = "Cần đặt bổ sung tồn kho theo mức an toàn"
-
-            alerts.append({
-                "item": item_code,
-                "product": None,
-                "material_code": item_code,
-                "material_name": material.name,
-                "ip": round(ip, 2),
-                "rop": round(rop, 2),
-                "ss": round(ss, 2),
-                "status": "ORDER",
-                "s": round(S, 2),
-                "q": round(Q, 2),
-                "cost": round(cost, 2),
-                "urgency": urgency,
-                "action": "ORDER",
-                "recommendation": "Đặt hàng ngay" if urgency == "URGENT" else ("Đặt hàng sớm" if urgency == "MEDIUM" else "Cân nhắc đặt hàng theo chu kỳ"),
-                "message": message,
-                "days_left": days_left,
-                "abc_class": abc_class,
-            })
+        alerts.append({
+            "item": item_code,
+            "product": None,
+            "material_code": item_code,
+            "material_name": material.name,
+            "ip": round(ip, 2),
+            "rop": round(rop, 2),
+            "ss": round(ss, 2),
+            "status": "ORDER",
+            "s": round(S, 2),
+            "q": round(Q, 2),
+            "cost": round(cost, 2),
+            "urgency": urgency,
+            "action": "ORDER",
+            "recommendation": "Đặt hàng ngay" if urgency == "URGENT" else ("Đặt hàng sớm" if urgency == "MEDIUM" else "Cân nhắc đặt hàng theo chu kỳ"),
+            "message": message,
+            "days_left": days_left,
+            "abc_class": abc_class,
+        })
 
     alerts.sort(key=lambda x: (0 if x["urgency"] == "URGENT" else 1 if x["urgency"] == "MEDIUM" else 2, x["material_name"]))
 

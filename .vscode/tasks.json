@@ -1,0 +1,12 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "commit-push-forecast-aggregation",
+			"type": "shell",
+			"command": "git add inventory/views.py && git commit -m \"Aggregate shared materials across all product forecasts\" && git push origin main",
+			"isBackground": false,
+			"group": "none"
+		}
+	]
+}
