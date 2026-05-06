@@ -4,7 +4,7 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: python manage.py migrate --noinput && gunicorn inventory_dss.wsgi:application --bind 0.0.0.0:$PORT --timeout 120
+    startCommand: python manage.py migrate --noinput && gunicorn inventory_dss.wsgi:application --bind 0.0.0.0:$PORT --timeout 180
     autoDeployTrigger: commit
     envVars:
       - key: DEBUG
