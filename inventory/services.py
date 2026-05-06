@@ -54,7 +54,8 @@ def forecast_product(product_id):
             initialization_method="estimated"
         )
 
-        fit = model.fit(optimized=True)
+        # 🔥 Limit optimization iterations to prevent timeout on Render
+        fit = model.fit(optimized=True, disp=False, maxiter=50)
 
         forecast = fit.forecast(7)
 
