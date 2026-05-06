@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import math
+import os
 from collections import defaultdict
 from inventory.models import SalesData, BOM, Material, Product
 
@@ -95,23 +97,55 @@ def forecast_product(product_id):
 
 def aggregate_material_demand():
     demand_stats = defaultdict(lambda: {"mean": 0.0, "variance": 0.0})
-    product_forecasts = {}
 
-    for product in Product.objects.all():
-        mean, std, _, _, _, _ = forecast_product(product.id)
-        product_forecasts[product.id] = (
-            max(float(mean or 0), 0.0),
-            max(float(std or 0), 0.0),
+    from .models import SalesData
+
+    # In Djongo / Render mode, avoid running statsmodels for all products —
+    # build lightweight estimates from SalesData when requested.
+    product_forecasts = {}
+    if os.getenv("USE_DJONGO") == "1":
+        sales_by_product = defaultdict(list)
+        for product_id, quantity in SalesData.objects.values_list('product_id', 'quantity'):
+            sales_by_product[product_id].append(float(quantity or 0))
+
+        for product_id, values in sales_by_product.items():
+            if not values:
+                continue
+
+            mean = sum(values) / len(values)
+            variance = sum((value - mean) ** 2 for value in values) / len(values)
+            std = math.sqrt(max(variance, 0.0))
+
+            product_forecasts[product_id] = (
+                max(float(mean or 0), 0.0),
+                max(float(std or 0), 0.0),
+            )
+    else:
+        products_with_sales = set(
+            SalesData.objects.values_list('product_id', flat=True).distinct()
         )
 
+        for product_id in products_with_sales:
+            try:
+                mean, std, _, _, _, _ = forecast_product(product_id)
+                product_forecasts[product_id] = (
+                    max(float(mean or 0), 0.0),
+                    max(float(std or 0), 0.0),
+                )
+            except Exception:
+                product_forecasts[product_id] = (0.0, 0.0)
+
+    # Fetch BOMs once and deduplicate by (material, product) to avoid double-count
     all_boms = list(BOM.objects.select_related("material", "product"))
     seen_bom_pairs = set()
+    deduped_boms = []
     for bom in all_boms:
-        key = (bom.product_id, bom.material_id)
-        if key in seen_bom_pairs:
-            continue
-        seen_bom_pairs.add(key)
+        key = (bom.material_id, bom.product_id)
+        if key not in seen_bom_pairs:
+            seen_bom_pairs.add(key)
+            deduped_boms.append(bom)
 
+    for bom in deduped_boms:
         mean, std = product_forecasts.get(bom.product_id, (0.0, 0.0))
         qty = float(bom.quantity_per_unit or 0)
         if qty <= 0:
