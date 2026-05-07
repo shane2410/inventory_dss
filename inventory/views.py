@@ -960,12 +960,21 @@ def import_data(request):
                 date_input = None
 
             if product_id and quantity > 0 and date_input:
-                SalesData.objects.create(
+                is_duplicate = SalesData.objects.filter(
                     product_id=product_id,
                     quantity=quantity,
-                    date=date_input
-                )
-                result_message = 'Đã thêm doanh số thành công.'
+                    date=date_input,
+                ).exists()
+
+                if is_duplicate:
+                    result_message = 'Bỏ qua: bản ghi doanh số trùng hoàn toàn đã tồn tại.'
+                else:
+                    SalesData.objects.create(
+                        product_id=product_id,
+                        quantity=quantity,
+                        date=date_input
+                    )
+                    result_message = 'Đã thêm doanh số thành công.'
             else:
                 error_message = 'Dữ liệu nhập doanh số không hợp lệ.'
 
@@ -988,20 +997,30 @@ def import_data(request):
             if material_id and quantity > 0 and date_input and t_type in ('IN', 'OUT'):
                 material = Material.objects.get(id=material_id)
 
-                if t_type == 'IN':
-                    material.on_hand += quantity
-                elif t_type == 'OUT' and material.on_hand >= quantity:
-                    material.on_hand -= quantity
-
-                material.save()
-
-                Transaction.objects.create(
+                is_duplicate = Transaction.objects.filter(
                     material=material,
                     quantity=quantity,
                     transaction_type=t_type,
-                    date=date_input
-                )
-                result_message = 'Đã thêm giao dịch thành công.'
+                    date=date_input,
+                ).exists()
+
+                if is_duplicate:
+                    result_message = 'Bỏ qua: giao dịch trùng hoàn toàn đã tồn tại.'
+                else:
+                    if t_type == 'IN':
+                        material.on_hand += quantity
+                    elif t_type == 'OUT' and material.on_hand >= quantity:
+                        material.on_hand -= quantity
+
+                    material.save()
+
+                    Transaction.objects.create(
+                        material=material,
+                        quantity=quantity,
+                        transaction_type=t_type,
+                        date=date_input
+                    )
+                    result_message = 'Đã thêm giao dịch thành công.'
             else:
                 error_message = 'Dữ liệu nhập giao dịch không hợp lệ.'
 
@@ -1018,6 +1037,7 @@ def import_data(request):
                     if import_type == 'sales':
                         # Expected columns: product_name, date, quantity
                         rows_imported = 0
+                        rows_skipped_duplicate = 0
                         for row in ws.iter_rows(min_row=2, values_only=True):
                             if row[0] is None:
                                 continue
@@ -1033,20 +1053,33 @@ def import_data(request):
                                     Product.objects.filter(source_id=product_name).first()
 
                                 if product:
-                                    SalesData.objects.create(
+                                    is_duplicate = SalesData.objects.filter(
                                         product=product,
                                         date=date_obj,
-                                        quantity=quantity
-                                    )
-                                    rows_imported += 1
+                                        quantity=quantity,
+                                    ).exists()
+
+                                    if is_duplicate:
+                                        rows_skipped_duplicate += 1
+                                    else:
+                                        SalesData.objects.create(
+                                            product=product,
+                                            date=date_obj,
+                                            quantity=quantity
+                                        )
+                                        rows_imported += 1
                             except Exception:
                                 continue
 
-                        result_message = f'✓ Đã import {rows_imported} bản ghi bán hàng thành công.'
+                        result_message = (
+                            f'✓ Đã import {rows_imported} bản ghi bán hàng thành công. '
+                            f'Bỏ qua {rows_skipped_duplicate} bản ghi trùng hoàn toàn.'
+                        )
 
                     elif import_type == 'transaction':
                         # Expected columns: material_name, quantity, transaction_type, date
                         rows_imported = 0
+                        rows_skipped_duplicate = 0
                         for row in ws.iter_rows(min_row=2, values_only=True):
                             if row[0] is None:
                                 continue
@@ -1063,17 +1096,30 @@ def import_data(request):
                                     Material.objects.filter(source_id=material_name).first()
 
                                 if material:
-                                    Transaction.objects.create(
+                                    is_duplicate = Transaction.objects.filter(
                                         material=material,
                                         quantity=quantity,
                                         transaction_type=transaction_type,
-                                        date=date_obj
-                                    )
-                                    rows_imported += 1
+                                        date=date_obj,
+                                    ).exists()
+
+                                    if is_duplicate:
+                                        rows_skipped_duplicate += 1
+                                    else:
+                                        Transaction.objects.create(
+                                            material=material,
+                                            quantity=quantity,
+                                            transaction_type=transaction_type,
+                                            date=date_obj
+                                        )
+                                        rows_imported += 1
                             except Exception:
                                 continue
 
-                        result_message = f'✓ Đã import {rows_imported} bản ghi giao dịch thành công.'
+                        result_message = (
+                            f'✓ Đã import {rows_imported} bản ghi giao dịch thành công. '
+                            f'Bỏ qua {rows_skipped_duplicate} bản ghi trùng hoàn toàn.'
+                        )
 
                 except Exception as e:
                     error_message = f'Lỗi xử lý file: {str(e)}'
