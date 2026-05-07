@@ -5,3 +5,6 @@ db.sqlite3
 .env
 .venv
 .idea/
+backup_db.ps1
+restore_db.ps1
+db.sqlite3.backup

@@ -9,6 +9,8 @@ services:
     envVars:
       - key: DEBUG
         value: "False"
+      - key: PYTHON_VERSION
+        value: "3.11.9"
       - key: ALLOWED_HOSTS
         value: .onrender.com,127.0.0.1,localhost
       - key: USE_DJONGO
