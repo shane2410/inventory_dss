@@ -743,6 +743,14 @@
           <span>Import dữ liệu</span>
         </a>
         <a
+          href="{% url 'import-multilevel-bom' %}"
+          class="{% if request.resolver_match.url_name == 'import-multilevel-bom' %}active{% endif %}"
+          {% if not show_multilevel_bom_link %}style="display:none;"{% endif %}
+        >
+          <i class="fas fa-diagram-project"></i>
+          <span>BOM đa cấp</span>
+        </a>
+        <a
           href="{% url 'forecast' %}"
           class="{% if request.resolver_match.url_name == 'forecast' %}active{% endif %}"
           {% if not show_forecast_link %}style="display:none;"{% endif %}

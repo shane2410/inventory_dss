@@ -48,6 +48,41 @@ class BOM(models.Model):
         return f"{self.product} - {self.material}"
 
 
+class MultiLevelBOMEdge(models.Model):
+    TYPE_PRODUCT = "PRODUCT"
+    TYPE_SEMI = "SEMI"
+    TYPE_MATERIAL = "MATERIAL"
+
+    NODE_TYPE_CHOICES = (
+        (TYPE_PRODUCT, "Product"),
+        (TYPE_SEMI, "Semi-finished"),
+        (TYPE_MATERIAL, "Material"),
+    )
+
+    root_product_code = models.CharField(max_length=64, db_index=True)
+    parent_code = models.CharField(max_length=64, db_index=True)
+    parent_type = models.CharField(max_length=16, choices=NODE_TYPE_CHOICES)
+    child_code = models.CharField(max_length=64, db_index=True)
+    child_type = models.CharField(max_length=16, choices=NODE_TYPE_CHOICES)
+    quantity_per_parent = models.FloatField()
+    level = models.PositiveIntegerField(default=0)
+    remark = models.CharField(max_length=255, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["root_product_code", "parent_code", "child_code"],
+                name="uniq_multilevel_bom_edge",
+            )
+        ]
+        ordering = ["root_product_code", "level", "parent_code", "child_code"]
+
+    def __str__(self):
+        return f"{self.root_product_code}: {self.parent_code} -> {self.child_code}"
+
+
 # =========================
 # SALES DATA (Demand)
 # =========================

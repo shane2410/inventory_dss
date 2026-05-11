@@ -1139,6 +1139,105 @@ def import_data(request):
     })
 
 
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def multilevel_bom_import(request):
+    from .models import MultiLevelBOMEdge
+    from .forms import MultiLevelBOMEntryForm
+
+    result_message = None
+    error_message = None
+    form = MultiLevelBOMEntryForm(request.POST or None)
+
+    if request.method == 'POST':
+        # Add new edge via top form
+        if 'add_bom_edge' in request.POST:
+            if form.is_valid():
+                cd = form.cleaned_data
+                try:
+                    edge, created = MultiLevelBOMEdge.objects.get_or_create(
+                        root_product_code=cd['root_product_code'],
+                        parent_code=cd['parent_code'],
+                        child_code=cd['child_code'],
+                        defaults={
+                            'parent_type': cd['parent_type'],
+                            'child_type': cd['child_type'],
+                            'quantity_per_parent': cd['quantity_per_parent'],
+                            'level': cd['level'],
+                            'remark': cd['remark'],
+                        },
+                    )
+                    if not created:
+                        edge.parent_type = cd['parent_type']
+                        edge.child_type = cd['child_type']
+                        edge.quantity_per_parent = cd['quantity_per_parent']
+                        edge.level = cd['level']
+                        edge.remark = cd['remark']
+                        edge.save()
+                        result_message = 'Đã cập nhật cạnh BOM tồn tại.'
+                    else:
+                        result_message = 'Đã thêm cạnh BOM mới.'
+                except Exception as e:
+                    error_message = str(e)
+            else:
+                error_message = 'Dữ liệu nhập không hợp lệ.'
+
+        # Update or delete row via row form
+        elif request.POST.get('action_type') == 'update_bom_edge':
+            edge_id = request.POST.get('edge_id')
+            try:
+                edge = MultiLevelBOMEdge.objects.get(id=edge_id)
+                edge.parent_code = (request.POST.get('parent_code') or edge.parent_code).upper()
+                edge.parent_type = request.POST.get('parent_type') or edge.parent_type
+                edge.child_code = (request.POST.get('child_code') or edge.child_code).upper()
+                edge.child_type = request.POST.get('child_type') or edge.child_type
+                try:
+                    edge.quantity_per_parent = float(request.POST.get('quantity_per_parent') or edge.quantity_per_parent)
+                except:
+                    pass
+                try:
+                    edge.level = int(request.POST.get('level') or edge.level)
+                except:
+                    pass
+                edge.remark = request.POST.get('remark') or edge.remark
+                edge.save()
+                result_message = 'Đã lưu thay đổi.'
+            except Exception as e:
+                error_message = str(e)
+
+        elif request.POST.get('action_type') == 'delete_bom_edge':
+            edge_id = request.POST.get('edge_id')
+            try:
+                MultiLevelBOMEdge.objects.filter(id=edge_id).delete()
+                result_message = 'Đã xóa cạnh BOM.'
+            except Exception as e:
+                error_message = str(e)
+
+    # Build grouped list for template
+    edges = MultiLevelBOMEdge.objects.all().order_by('root_product_code', 'level', 'parent_code', 'child_code')
+    grouped = {}
+    for e in edges:
+        grouped.setdefault(e.root_product_code, []).append(e)
+
+    grouped_boms = []
+    for root, rows in grouped.items():
+        grouped_boms.append({
+            'root_product_code': root,
+            'row_count': len(rows),
+            'rows': rows,
+        })
+
+    # ensure form instance for initial display
+    if request.method != 'POST':
+        form = MultiLevelBOMEntryForm()
+
+    return render(request, 'inventory/import_multilevel_bom.html', {
+        'form': form,
+        'grouped_boms': grouped_boms,
+        'result_message': result_message,
+        'error_message': error_message,
+    })
+
+
 # =========================
 # MONGODB API ENDPOINTS
 # =========================

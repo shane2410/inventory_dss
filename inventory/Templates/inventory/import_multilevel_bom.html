@@ -1,0 +1,418 @@
+{% extends 'inventory/base.html' %}
+
+{% block body_class %}page-multilevel-bom{% endblock %}
+
+{% block content %}
+<style>
+  .bom-page {
+    display: grid;
+    gap: 18px;
+    font-size: 14.35px;
+  }
+
+  .bom-card {
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 14px 30px rgba(35, 52, 83, 0.08);
+    padding: 18px;
+  }
+
+  .bom-title {
+    margin: 0;
+    font-size: 24px;
+    color: #1f3442;
+  }
+
+  .bom-subtitle {
+    margin: 8px 0 0;
+    color: #4d687a;
+  }
+
+  .msg {
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-weight: 600;
+  }
+
+  .msg.success {
+    color: #245c2f;
+    background: #e5f5e8;
+    border: 1px solid #b8dfbf;
+  }
+
+  .msg.error {
+    color: #742f2f;
+    background: #fae7e7;
+    border: 1px solid #efbcbc;
+  }
+
+  .bom-form {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 10px 14px;
+  }
+
+  .bom-label {
+    display: block;
+    margin-bottom: 4px;
+    color: #1f3442;
+    font-weight: 700;
+    font-size: 12px;
+    min-width: 0;
+  }
+
+  .bom-input {
+    width: 100%;
+    border: 1px solid #d5e0ec;
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: #ffffff;
+    font-size: 13px;
+    box-sizing: border-box;
+  }
+
+  .bom-cell {
+    min-width: 0;
+  }
+
+  .bom-cell input,
+  .bom-cell select,
+  .bom-cell textarea {
+    width: 92%;
+    max-width: 112px;
+    border: 1px solid #d5e0ec;
+    border-radius: 16px;
+    padding: 7px 10px;
+    background: #ffffff;
+    font-size: 13px;
+    box-sizing: border-box;
+  }
+
+  .bom-cell textarea {
+    width: 100%;
+    max-width: none;
+  }
+
+  .bom-cell select {
+    max-width: 132px;
+  }
+
+  .bom-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 6px;
+  }
+
+  .btn-save {
+    border: none;
+    border-radius: 16px;
+    padding: 9px 14px;
+    background: linear-gradient(135deg, #446f93, #6a96b8);
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 14.35px;
+  }
+
+  .hint {
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: #547084;
+  }
+
+  details.bom-group {
+    border: 1px solid #d8e5f2;
+    border-radius: 12px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    background: #fbfdff;
+  }
+
+  details.bom-group summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 12px 14px;
+    font-weight: 700;
+    color: #1f3442;
+    background: #f1f7fc;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  details.bom-group summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .group-count {
+    color: #446f93;
+    font-weight: 600;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    padding: 10px;
+  }
+
+  .bom-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .bom-row-form {
+    display: contents;
+  }
+
+  .bom-hidden-row-form {
+    display: none;
+  }
+
+  .bom-edit-input,
+  .bom-edit-select,
+  .bom-edit-textarea {
+    width: 100%;
+    border: 1px solid #d5e0ec;
+    border-radius: 14px;
+    padding: 7px 10px;
+    background: #ffffff;
+    font-size: 12.5px;
+    box-sizing: border-box;
+  }
+
+  .bom-edit-textarea {
+    min-height: 34px;
+    resize: none;
+  }
+
+  .row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+
+  .row-save-btn,
+  .row-delete-btn {
+    border: none;
+    border-radius: 999px;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .row-save-btn {
+    background: #4f7ea1;
+    color: #fff;
+    display: inline-flex;
+  }
+
+  .row-delete-btn {
+    background: #f1f5f9;
+    color: #7a2e2e;
+    border: 1px solid #d7e2ef;
+    display: inline-flex;
+  }
+
+  .bom-table th,
+  .bom-table td {
+    border-bottom: 1px solid #e4edf6;
+    text-align: left;
+    padding: 7px 8px;
+    font-size: 12.5px;
+    max-width: 138px;
+  }
+
+  .bom-table th {
+    background: #f1f7fc;
+    color: #2d4a60;
+  }
+
+  .empty-note {
+    color: #58768a;
+    font-style: italic;
+  }
+
+  .editable-note {
+    color: #547084;
+    font-size: 12px;
+    margin: 0 0 6px;
+  }
+
+  @media (max-width: 980px) {
+    .bom-form {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .bom-actions {
+      grid-column: 1 / -1;
+    }
+
+    .bom-cell input,
+    .bom-cell select,
+    .bom-cell textarea {
+      width: 100%;
+      max-width: none;
+    }
+  }
+</style>
+
+<div class="bom-page">
+  <section class="bom-card">
+    <h1 class="bom-title">Thêm BOM đa cấp</h1>
+    <p class="bom-subtitle">Nhập tay quan hệ cha-con cho MRP đa cấp. Quy tắc mã: Product bắt đầu bằng P, Material bắt đầu bằng RM.</p>
+  </section>
+
+  {% if result_message %}
+  <div class="msg success">{{ result_message }}</div>
+  {% endif %}
+  {% if error_message %}
+  <div class="msg error">{{ error_message }}</div>
+  {% endif %}
+
+  <section class="bom-card">
+    <form method="post" class="bom-form">
+      {% csrf_token %}
+      <input type="hidden" name="add_bom_edge" value="1" />
+
+      <div class="bom-cell"><label class="bom-label" for="id_root_product_code">Root Product Code</label></div>
+      <div class="bom-cell"><label class="bom-label" for="id_parent_code">Parent Code</label></div>
+      <div class="bom-cell"><label class="bom-label" for="id_parent_type">Parent Type</label></div>
+      <div class="bom-cell"><label class="bom-label" for="id_child_code">Child Code</label></div>
+      <div class="bom-cell"><label class="bom-label" for="id_child_type">Child Type</label></div>
+      <div class="bom-cell"><label class="bom-label" for="id_quantity_per_parent">Qty / Parent</label></div>
+      <div class="bom-cell"><label class="bom-label" for="id_level">Level</label></div>
+      <div class="bom-cell"><label class="bom-label" for="id_remark">Remark</label></div>
+
+      <div class="bom-cell">{{ form.root_product_code }}{{ form.root_product_code.errors }}</div>
+      <div class="bom-cell">{{ form.parent_code }}{{ form.parent_code.errors }}</div>
+      <div class="bom-cell">{{ form.parent_type }}{{ form.parent_type.errors }}</div>
+      <div class="bom-cell">{{ form.child_code }}{{ form.child_code.errors }}</div>
+      <div class="bom-cell">{{ form.child_type }}{{ form.child_type.errors }}</div>
+      <div class="bom-cell">{{ form.quantity_per_parent }}{{ form.quantity_per_parent.errors }}</div>
+      <div class="bom-cell">{{ form.level }}{{ form.level.errors }}</div>
+      <div class="bom-cell">{{ form.remark }}{{ form.remark.errors }}</div>
+
+      <div class="bom-actions">
+        <button type="submit" class="btn-save">Lưu quan hệ BOM</button>
+      </div>
+    </form>
+
+    <p class="hint">Mỗi dòng là một cạnh BOM: ParentCode -> ChildCode. Bạn có thể thu gọn/mở rộng theo từng sản phẩm gốc ở bên dưới.</p>
+  </section>
+
+  <section class="bom-card">
+    <h2>Danh sách BOM theo từng sản phẩm</h2>
+    {% if grouped_boms %}
+      {% for group in grouped_boms %}
+      <details class="bom-group" {% if forloop.first %}open{% endif %}>
+        <summary>
+          <span>{{ group.root_product_code }}</span>
+          <span class="group-count">{{ group.row_count }} dòng</span>
+        </summary>
+        <div class="table-wrap">
+          {% for row in group.rows %}
+          <form id="row-form-{{ row.id }}" method="post" class="bom-hidden-row-form">
+            {% csrf_token %}
+            <input type="hidden" name="action_type" value="update_bom_edge">
+            <input type="hidden" name="edge_id" value="{{ row.id }}">
+            <input type="hidden" name="root_product_code" value="{{ row.root_product_code }}">
+          </form>
+          {% endfor %}
+          <table class="bom-table">
+            <thead>
+              <tr>
+                <th>Parent Code</th>
+                <th>Parent Type</th>
+                <th>Child Code</th>
+                <th>Child Type</th>
+                <th>Qty/Parent</th>
+                <th>Level</th>
+                <th>Remark</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in group.rows %}
+              <tr data-row-id="{{ row.id }}">
+                <td>
+                  <input form="row-form-{{ row.id }}" class="bom-edit-input" type="text" name="parent_code" value="{{ row.parent_code }}" data-original="{{ row.parent_code }}">
+                </td>
+                <td>
+                  <select form="row-form-{{ row.id }}" class="bom-edit-select" name="parent_type" data-original="{{ row.parent_type }}">
+                    <option value="PRODUCT" {% if row.parent_type == 'PRODUCT' %}selected{% endif %}>Product</option>
+                    <option value="SEMI" {% if row.parent_type == 'SEMI' %}selected{% endif %}>Semi-finished</option>
+                    <option value="MATERIAL" {% if row.parent_type == 'MATERIAL' %}selected{% endif %}>Material</option>
+                  </select>
+                </td>
+                <td>
+                  <input form="row-form-{{ row.id }}" class="bom-edit-input" type="text" name="child_code" value="{{ row.child_code }}" data-original="{{ row.child_code }}">
+                </td>
+                <td>
+                  <select form="row-form-{{ row.id }}" class="bom-edit-select" name="child_type" data-original="{{ row.child_type }}">
+                    <option value="PRODUCT" {% if row.child_type == 'PRODUCT' %}selected{% endif %}>Product</option>
+                    <option value="SEMI" {% if row.child_type == 'SEMI' %}selected{% endif %}>Semi-finished</option>
+                    <option value="MATERIAL" {% if row.child_type == 'MATERIAL' %}selected{% endif %}>Material</option>
+                  </select>
+                </td>
+                <td>
+                  <input form="row-form-{{ row.id }}" class="bom-edit-input" type="number" step="1" min="1" name="quantity_per_parent" value="{{ row.quantity_per_parent|floatformat:'0' }}" data-original="{{ row.quantity_per_parent|floatformat:'0' }}">
+                </td>
+                <td>
+                  <input form="row-form-{{ row.id }}" class="bom-edit-input" type="number" step="1" min="0" name="level" value="{{ row.level }}" data-original="{{ row.level }}">
+                </td>
+                <td>
+                  <textarea form="row-form-{{ row.id }}" class="bom-edit-textarea" name="remark" data-original="{{ row.remark|default:''|escape }}">{{ row.remark|default:'' }}</textarea>
+                </td>
+                <td>
+                  <div class="row-actions">
+                    <button form="row-form-{{ row.id }}" type="submit" class="row-save-btn">Lưu</button>
+                    <button form="row-form-{{ row.id }}" type="submit" class="row-delete-btn" name="action_type" value="delete_bom_edge" onclick="return confirm('Bạn có chắc chắn muốn xóa dòng BOM này không?');">Xóa</button>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      {% endfor %}
+    {% else %}
+      <p class="empty-note">Chưa có dữ liệu BOM đa cấp nào.</p>
+    {% endif %}
+  </section>
+</div>
+<script>
+  (function () {
+    const rows = document.querySelectorAll('tr[data-row-id]');
+
+    const normalize = (value) => String(value ?? '').trim();
+
+    rows.forEach((row) => {
+      const rowId = row.dataset.rowId;
+      const saveButton = document.querySelector(`button[form="row-form-${rowId}"][type="submit"]`);
+      const fields = row.querySelectorAll('input, select, textarea');
+
+      const original = {};
+      fields.forEach((field) => {
+        original[field.name] = normalize(field.dataset.original ?? field.value);
+      });
+
+      const syncSaveState = () => {
+        const changed = Array.from(fields).some((field) => normalize(field.value) !== original[field.name]);
+        saveButton.style.visibility = changed ? 'visible' : 'visible';
+        saveButton.style.opacity = changed ? '1' : '0.85';
+      };
+
+      fields.forEach((field) => {
+        field.addEventListener('input', syncSaveState);
+        field.addEventListener('change', syncSaveState);
+      });
+
+      syncSaveState();
+    });
+  })();
+</script>
+{% endblock %}

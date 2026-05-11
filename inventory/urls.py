@@ -15,6 +15,7 @@ from .views import (
     delete_sale,
     delete_transaction,
     import_data,
+    multilevel_bom_import,
     # MongoDB APIs
     api_mongodb_materials,
     api_mongodb_material_detail,
@@ -36,6 +37,7 @@ urlpatterns = [
     path('materials/', material_list, name='material-list'),
     path('products/', product_list, name='product-list'),
     path('import/', import_data, name='import-data'),
+    path('import/multilevel-bom/', multilevel_bom_import, name='import-multilevel-bom'),
 
     path('alert/', alert, name='alert'),
     path('forecast/', forecast, name='forecast'),
