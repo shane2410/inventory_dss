@@ -29,26 +29,27 @@
 
   .cards .stat-card,
   .recommendation-summary .stat-card {
-    min-height: 148px;
+    min-height: 133px;
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
-    gap: 12px;
-    padding-top: 20px;
-    padding-bottom: 20px;
+    gap: 9px;
+    padding-top: 17px;
+    padding-bottom: 17px;
   }
 
   .cards .stat-card h3,
   .recommendation-summary .stat-card h3 {
-    margin: 0 0 12px;
-    font-size: 17px;
+    margin: 0 0 8px;
+    font-size: 16px;
   }
 
   .cards .stat-card p,
   .recommendation-summary .stat-card p {
     margin: 0;
-    line-height: 1.05;
-    font-size: 42px;
+    line-height: 1;
+    font-size: 43px;
+    margin-top: 1px;
   }
 
   .recommendation-summary .stat-card.summary-chip-urgent-soft {
@@ -181,7 +182,8 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(360px, 1fr);
     gap: 22px;
-    align-items: start;
+    align-items: stretch;
+    margin-top: 0;
     margin-bottom: 22px;
   }
 
@@ -190,7 +192,8 @@
     flex-direction: column;
     padding: 4px 12px 4px;
     box-sizing: border-box;
-    margin-top: 24px;
+    margin-top: 0;
+    height: 100%;
   }
 
   .sales-chart-panel h2 {
@@ -222,13 +225,13 @@
     font-size: 14px;
   }
 
-  .dashboard-sales-table-card {
-    margin-top: 0;
+  .dashboard-table-wrap.dashboard-sales-table-card {
+    margin-top: -5px;
   }
 
   .dashboard-top-row {
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+    grid-template-columns: minmax(0, 1.03fr) minmax(330px, 0.92fr);
     gap: 22px;
     align-items: start;
     margin-bottom: 22px;
@@ -251,9 +254,24 @@
 
   .abc-chart-panel {
     display: grid;
-    grid-template-columns: minmax(220px, 240px) minmax(0, 1fr);
-    gap: 18px;
+    grid-template-columns: minmax(200px, 220px) minmax(0, 1fr);
+    gap: 8px;
     align-items: center;
+  }
+
+  .dashboard-panel-abc {
+    padding: 15px 15px 13px;
+    min-height: 220px;
+  }
+
+  .dashboard-panel-abc .abc-chart-panel {
+    grid-template-columns: minmax(200px, 220px) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .dashboard-panel-abc canvas {
+    width: 196px !important;
+    height: 196px !important;
   }
 
   .abc-legend {
@@ -265,20 +283,26 @@
 
   .abc-legend-item {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
   }
 
   .abc-legend-label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   }
 
   .abc-legend-value {
     text-align: right;
-    white-space: nowrap;
+    white-space: normal;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 16px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    margin-left: 10px;
   }
 
   .dashboard-panel {
@@ -447,8 +471,7 @@
     }
 
     .dashboard-top-row,
-    .abc-chart-panel,
-    .dashboard-sales-row {
+    .abc-chart-panel {
       grid-template-columns: 1fr;
     }
   }
@@ -491,11 +514,11 @@
       </div>
     </div>
 
-    <div class="dashboard-panel">
+    <div class="dashboard-panel dashboard-panel-abc">
       <h2>Tỷ trọng ABC theo giá trị vật tư</h2>
       <div class="abc-chart-panel">
-        <div style="max-width:240px;justify-self:center;">
-          <canvas id="abcPie" style="width:240px;height:240px"></canvas>
+        <div style="max-width:196px;justify-self:center;">
+          <canvas id="abcPie" style="width:196px;height:196px"></canvas>
         </div>
         <div class="abc-legend">
           <div class="abc-legend-item">
@@ -697,9 +720,16 @@
           legend: { display: false },
           datalabels: {
             color: '#ffffff',
+            anchor: 'center',
+            align: 'center',
+            clamp: true,
             font: {
               weight: '800',
-              size: 13
+              size: 11
+            },
+            display: (context) => {
+              const currentValue = Number(context.dataset.data[context.dataIndex] || 0);
+              return total > 0 && (currentValue / total) >= 0.03;
             },
             formatter: (value) => {
               if (!total) {
@@ -872,7 +902,8 @@
 
       salesChartPanel.style.height = 'auto';
       salesChartPanel.style.minHeight = '0';
-      const targetHeight = salesTableCard.getBoundingClientRect().height;
+      const extraChartHeight = 130;
+      const targetHeight = salesTableCard.getBoundingClientRect().height + extraChartHeight;
       salesChartPanel.style.height = `${Math.ceil(targetHeight)}px`;
 
       if (salesChartWrap && salesChartTitle) {
