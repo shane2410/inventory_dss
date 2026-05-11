@@ -78,31 +78,32 @@
           transform: scale(calc(1 / 0.8));
           transform-origin: top left;
           /* ensure layout/flow width matches the pre-scale value so .main positions correctly */
-          width: calc(250px / (1 / 0.8));
+          width: calc(220px / (1 / 0.8));
           padding: calc(24px / (1 / 0.8)) calc(18px / (1 / 0.8));
         }
 
         .main {
-          width: calc(100% - (250px / (1 / 0.8)));
-          margin-left: calc(250px / (1 / 0.8));
+          width: calc(100% - (220px / (1 / 0.8)));
+          margin-left: calc(220px / (1 / 0.8));
         }
 
         /* collapsed sidebar adjustments (mirror the global collapsed rules) */
         body.sidebar-collapsed .sidebar {
-          width: calc(88px / (1 / 0.8));
+          width: calc(77px / (1 / 0.8));
           padding: calc(24px / (1 / 0.8)) calc(12px / (1 / 0.8));
         }
 
         body.sidebar-collapsed .main {
-          width: calc(100% - (88px / (1 / 0.8)));
-          margin-left: calc(88px / (1 / 0.8));
+          width: calc(100% - (77px / (1 / 0.8)));
+          margin-left: calc(77px / (1 / 0.8));
         }
       }
 
       .sidebar {
-        width: 250px;
+        width: 220px;
         background: var(--nav-bg);
         color: white;
+        font-size: 0.95em;
         height: 100vh;
         padding: 24px 18px;
         position: fixed;
@@ -139,7 +140,7 @@
         border-radius: 10px;
         background: rgba(255, 255, 255, 0.12);
         color: #ffffff;
-        font-size: 22px;
+        font-size: 19px;
         font-weight: 800;
         letter-spacing: 1px;
       }
@@ -196,7 +197,7 @@
       .sidebar a i {
         width: 20px;
         text-align: center;
-        font-size: 16px;
+        font-size: 13.7px;
         flex: 0 0 auto;
       }
 
@@ -222,20 +223,20 @@
       }
 
       .main {
-        width: calc(100% - 250px);
-        margin-left: 250px;
+        width: calc(100% - 220px);
+        margin-left: 220px;
         padding: 26px;
         transition: padding 0.24s ease;
       }
 
       body.sidebar-collapsed .sidebar {
-        width: 88px;
+        width: 77px;
         padding: 24px 12px;
       }
 
       body.sidebar-collapsed .main {
-        width: calc(100% - 88px);
-        margin-left: 88px;
+        width: calc(100% - 77px);
+        margin-left: 77px;
       }
 
       body.sidebar-collapsed .sidebar-brand {
