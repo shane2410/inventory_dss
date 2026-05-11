@@ -66,7 +66,10 @@ def generate_recommendation(item):
         recommendation = "Theo dõi thêm"
 
     if action == "ORDER" and avg_daily_demand > 0:
-        days_left = max(ip / avg_daily_demand, 0)
+        # Days of Supply (DoS) = I_OH / D_avg (on-hand inventory only)
+        ioh = _read_item_value(item, "IOH", _read_item_value(item, "on_hand", 0))
+        ioh = float(ioh) if ioh is not None else 0
+        days_left = max(ioh / avg_daily_demand, 0) if ioh > 0 else 0
         message = f"Tồn kho sắp hết trong {math.ceil(days_left)} ngày, cần đặt ngay"
     elif action == "ORDER":
         message = "Cần đặt bổ sung tồn kho theo mức an toàn"
@@ -127,21 +130,39 @@ def build_inventory_alert_recommendations():
         if ip >= rop:
             continue
 
+        # compute Days of Supply (DoS) and Lead Time (L)
         abc_class = abc_map.get(material.id, "C")
-        urgency = {
-            "A": "URGENT",
-            "B": "MEDIUM",
-            "C": "LOW",
-        }.get(abc_class, "LOW")
+        days_left_float = None
+        days_left = None
+        if demand > 0:
+            # Days of Supply (DoS) = I_OH / D_avg
+            ioh = float(getattr(material, 'on_hand', 0) or 0)
+            days_left_float = ioh / demand
+            days_left = math.ceil(days_left_float) if days_left_float > 0 else 0
+
+        leadtime = getattr(material, "leadtime", None)
+
+        # Urgency index (I_UT) = DoS / LeadTime
+        iut = None
+        if days_left_float is not None and leadtime and leadtime > 0:
+            iut = days_left_float / float(leadtime)
+
+        # Map CR/I_UT to urgency tiers (conservative fallback if I_UT unknown)
+        if iut is None:
+            urgency = "URGENT"
+        else:
+            if iut < 0.9:
+                urgency = "URGENT"
+            elif iut <= 1.1:
+                urgency = "MEDIUM"
+            else:
+                urgency = "LOW"
 
         item_code = material.source_id or f"NVL{material.id}"
 
         S, Q, cost = optimize_order_quantity(material, demand, ip, rop, ss)
 
-        days_left = None
-        if demand > 0:
-            days_left = math.ceil(ip / demand)
-
+        # reuse values computed above
         if days_left is not None:
             message = f"Tồn kho sắp hết trong {days_left} ngày, cần đặt ngay"
         else:
@@ -164,6 +185,9 @@ def build_inventory_alert_recommendations():
             "recommendation": "Đặt hàng ngay" if urgency == "URGENT" else ("Đặt hàng sớm" if urgency == "MEDIUM" else "Cân nhắc đặt hàng theo chu kỳ"),
             "message": message,
             "days_left": days_left,
+            "days_left_float": days_left_float,
+            "leadtime": leadtime,
+            "iut": round(iut, 3) if iut is not None else None,
             "abc_class": abc_class,
         })
 
@@ -180,6 +204,104 @@ def build_inventory_alert_recommendations():
     return alerts, summary
 
 
+def build_inventory_watchlist_recommendations():
+    """
+    Build a watchlist of materials in stable status that are approaching ROP threshold.
+    
+    Watchlist condition: ROP < IP <= ROP * 1.1 (stable, recently recovered from low stock)
+    """
+    demand_stats = aggregate_material_demand()
+
+    materials = list(Material.objects.all())
+    abc_input = [
+        {
+            "material": material,
+            "demand": demand_stats[material.id]["mean"],
+        }
+        for material in materials
+    ]
+    abc_map = abc_classification(abc_input)
+
+    watchlist = []
+
+    for material in materials:
+        demand = demand_stats[material.id]["mean"]
+        variance = demand_stats[material.id]["variance"]
+
+        material_std = math.sqrt(max(variance, 0.0))
+        inv = inventory_analysis(material, demand, material_std)
+        ip = inv["ip"]
+        ss = inv["ss"]
+        rop = inv["rop"]
+
+        # Watchlist: ROP < IP <= ROP * 1.1 (stable status, just above ROP)
+        if not (rop < ip <= rop * 1.1):
+            continue
+
+        abc_class = abc_map.get(material.id, "C")
+        days_left_float = None
+        days_left = None
+        if demand > 0:
+            # Days of Supply (DoS) = I_OH / D_avg
+            ioh = float(getattr(material, 'on_hand', 0) or 0)
+            days_left_float = ioh / demand
+            days_left = math.ceil(days_left_float) if days_left_float > 0 else 0
+
+        leadtime = getattr(material, "leadtime", None)
+
+        # Urgency index (I_UT) = DoS / LeadTime
+        iut = None
+        if days_left_float is not None and leadtime and leadtime > 0:
+            iut = days_left_float / float(leadtime)
+
+        # Map CR/I_UT to urgency tiers
+        if iut is None:
+            urgency = "MEDIUM"  # Watchlist items are cautionary
+        else:
+            if iut < 0.9:
+                urgency = "URGENT"
+            elif iut <= 1.1:
+                urgency = "MEDIUM"
+            else:
+                urgency = "LOW"
+
+        item_code = material.source_id or f"NVL{material.id}"
+
+        S, Q, cost = optimize_order_quantity(material, demand, ip, rop, ss)
+
+        if days_left is not None:
+            message = f"Sắp chạm ngưỡng trong {days_left} ngày"
+        else:
+            message = "Vật tư sắp chạm ngưỡng đặt hàng"
+
+        watchlist.append({
+            "item": item_code,
+            "product": None,
+            "material_code": item_code,
+            "material_name": material.name,
+            "ip": round(ip, 2),
+            "rop": round(rop, 2),
+            "ss": round(ss, 2),
+            "status": "WATCH",
+            "s": round(S, 2),
+            "q": round(Q, 2),
+            "cost": round(cost, 2),
+            "urgency": urgency,
+            "action": "MONITOR",
+            "recommendation": "Theo dõi kỹ" if urgency != "LOW" else "Cân nhắc đặt hàng",
+            "message": message,
+            "days_left": days_left,
+            "days_left_float": days_left_float,
+            "leadtime": leadtime,
+            "iut": round(iut, 3) if iut is not None else None,
+            "abc_class": abc_class,
+        })
+
+    watchlist.sort(key=lambda x: -x["ip"])  # Sort by IP descending (closest to 110% ROP first)
+
+    return watchlist
+
+
 def build_dashboard_recommendations(limit=8):
     alerts, summary = build_inventory_alert_recommendations()
     items = []
@@ -191,7 +313,8 @@ def build_dashboard_recommendations(limit=8):
         items.append({
             "item": alert["item"],
             "material_name": alert["material_name"],
-            "abc_class": alert.get("abc_class") or "C",
+            "leadtime": alert.get("leadtime"),
+            "iut": alert.get("iut"),
             "action": alert["action"],
             "urgency": alert["urgency"],
             "recommendation": alert["recommendation"],

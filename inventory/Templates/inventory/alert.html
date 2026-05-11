@@ -5,6 +5,10 @@
   .stats-grid .stat-urgent {
     background: linear-gradient(135deg, #7f2f3b, #a84a58);
   }
+  .badge-watch {
+    background-color: #f0ad4e;
+    color: white;
+  }
 </style>
 {% endblock %}
 
@@ -57,7 +61,8 @@
         <th>ID</th>
         <th>IP</th>
         <th>ROP</th>
-        <th>Nhóm ABC</th>
+        <th>L</th>
+        <th>I_UT</th>
         <th>Mức độ</th>
         <th>Trạng thái</th>
         <th>S tối ưu</th>
@@ -73,7 +78,8 @@
         <td>{{ a.material_code }}</td>
         <td>{{ a.ip }}</td>
         <td>{{ a.rop }}</td>
-        <td>{{ a.abc_class }}</td>
+        <td>{{ a.leadtime }}</td>
+        <td>{% if a.iut is not None %}{{ a.iut|floatformat:2 }}{% else %}N/A{% endif %}</td>
         <td>
           {% if a.urgency == 'URGENT' %}
           <span class="badge badge-urgent">URGENT</span>
@@ -94,8 +100,76 @@
       </tr>
       {% empty %}
       <tr>
-        <td colspan="11" class="empty-state">
+        <td colspan="12" class="empty-state">
           Không có cảnh báo tồn kho trong thời điểm hiện tại.
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<!-- ===== WATCHLIST (SẮP CHẠM NGƯỠNG) ===== -->
+<div class="table-card">
+  <div class="table-head">
+    <div>
+      <h2>Sắp chạm ngưỡng (Watchlist)</h2>
+      <p>
+        Những vật liệu ở trạng thái ổn định có vị trí tồn kho IP trong vùng ROP < IP ≤ 110% ROP cần theo dõi sát sao.
+      </p>
+    </div>
+    <div class="info-chip">
+      {% if watchlist %}Cần theo dõi {{ watchlist|length }} dòng{% else %}Không có vật liệu sắp chạm ngưỡng{% endif %}
+    </div>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <tr>
+        <th class="stt-col">STT</th>
+        <th>ID</th>
+        <th>IP</th>
+        <th>ROP</th>
+        <th>L</th>
+        <th>I_UT</th>
+        <th>Mức độ</th>
+        <th>Trạng thái</th>
+        <th>S tối ưu</th>
+        <th>Lượng đặt Q</th>
+        <th>Còn lại</th>
+        <th>Khuyến nghị</th>
+        <th>Chi phí</th>
+      </tr>
+
+      {% for w in watchlist %}
+      <tr>
+        <td class="stt-col">{{ forloop.counter }}</td>
+        <td>{{ w.material_code }}</td>
+        <td>{{ w.ip }}</td>
+        <td>{{ w.rop }}</td>
+        <td>{{ w.leadtime }}</td>
+        <td>{% if w.iut is not None %}{{ w.iut|floatformat:2 }}{% else %}N/A{% endif %}</td>
+        <td>
+          {% if w.urgency == 'URGENT' %}
+          <span class="badge badge-urgent">URGENT</span>
+          {% elif w.urgency == 'MEDIUM' %}
+          <span class="badge badge-medium">MEDIUM</span>
+          {% else %}
+          <span class="badge badge-low">LOW</span>
+          {% endif %}
+        </td>
+        <td><span class="badge badge-watch">Theo dõi</span></td>
+        <td>{{ w.s }}</td>
+        <td>{{ w.q }}</td>
+        <td>
+          {% if w.days_left %}{{ w.days_left }} ngày{% else %}N/A{% endif %}
+        </td>
+        <td>{{ w.recommendation }}</td>
+        <td>{{ w.cost|floatformat:1 }}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="13" class="empty-state">
+          Không có vật liệu sắp chạm ngưỡng trong thời điểm hiện tại.
         </td>
       </tr>
       {% endfor %}

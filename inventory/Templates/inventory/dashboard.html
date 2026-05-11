@@ -549,7 +549,7 @@
         <th>IP / ROP</th>
         <th>Số lượng đề xuất</th>
         <th>Khẩn cấp</th>
-        <th>Nhóm ABC</th>
+        <th>I_UT</th>
         <th>Khuyến nghị</th>
       </tr>
       {% for rec in recommendations %}
@@ -562,7 +562,7 @@
         <td>
           <span class="urgency-badge urgency-urgent">URGENT</span>
         </td>
-        <td>{{ rec.abc_class }}</td>
+        <td>{% if rec.iut is not None %}{{ rec.iut|floatformat:2 }}{% else %}N/A{% endif %}</td>
         <td><p class="decision-note">{{ rec.message }}</p></td>
       </tr>
       {% empty %}

@@ -7,7 +7,7 @@ from openpyxl import Workbook, load_workbook
 from .models import Product, Material, SalesData, Transaction, BOM
 from .forms import ImportDataForm
 from .services import aggregate_material_demand, abc_classification, forecast_product, run_dss
-from .recommendations import build_dashboard_recommendations, build_inventory_alert_recommendations
+from .recommendations import build_dashboard_recommendations, build_inventory_alert_recommendations, build_inventory_watchlist_recommendations
 from datetime import datetime, timedelta, date
 from .permissions import (
     ALL_ROLE_CODES,
@@ -489,10 +489,12 @@ def material_list(request):
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def alert(request):
     alerts, summary = build_inventory_alert_recommendations()
+    watchlist = build_inventory_watchlist_recommendations()
 
     return render(request, 'inventory/alert.html', {
         "alerts": alerts,
         "summary": summary,
+        "watchlist": watchlist,
     })
 
 
