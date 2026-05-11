@@ -8,6 +8,13 @@
     display: grid;
     gap: 18px;
     font-size: 14.35px;
+    /* page-specific offset from sidebar: visual ~25px */
+    margin-left: calc(25px / 1.2);
+    /* enlarge this page's content by 20% */
+    transform: scale(1.2);
+    transform-origin: top left;
+    /* keep scaled content within the normal layout width */
+    width: calc(100% / 1.2);
   }
 
   .bom-card {
