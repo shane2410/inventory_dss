@@ -7,7 +7,7 @@ from inventory.models import SalesData, BOM, Material, Product
 # =========================
 # 1. FORECAST (CÓ XỬ LÝ DATA)
 # =========================
-def forecast_product(product_id):
+def forecast_product(product_id, sales_qs=None):
     sales = SalesData.objects.filter(product_id=product_id).values('date', 'quantity')
     df = pd.DataFrame(list(sales))
 
@@ -109,7 +109,7 @@ def aggregate_material_demand():
 
     for product_id in products_with_sales:
         try:
-            mean, std, _, _, _, _ = forecast_product(product_id)
+            mean, std, _, _, _, _ = forecast_product(product_id, sales_qs=None)
             product_forecasts[product_id] = (
                 max(float(mean or 0), 0.0),
                 max(float(std or 0), 0.0),
@@ -180,6 +180,86 @@ def inventory_analysis(material, mean, std):
         "rop": round(rop, 2),
         "action": action
     }
+
+
+def forecast_product_monthly(product_id, sales_qs=None):
+    """Forecast monthly sales for a product and predict next 8 months.
+
+    Returns: mean, std, forecast_list(8), mae, rmse, mape
+    """
+    if sales_qs is None:
+        sales = SalesData.objects.filter(product_id=product_id).values('date', 'quantity')
+    else:
+        sales = sales_qs.filter(product_id=product_id).values('date', 'quantity')
+    df = pd.DataFrame(list(sales))
+
+    if df.empty or len(df) < 3:
+        return 0, 0, [0] * 8, 0, 0, 0
+
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values('date')
+    df = df[df['quantity'] >= 0]
+
+    # Group by month
+    df = df.set_index('date').groupby(pd.Grouper(freq='M'))['quantity'].sum().reset_index()
+
+    # fill missing months
+    full_range = pd.date_range(start=df['date'].min(), end=df['date'].max(), freq='M')
+    df = df.set_index('date').reindex(full_range, fill_value=0)
+    df.index.name = 'date'
+
+    # outlier clip
+    q1 = df['quantity'].quantile(0.25)
+    q3 = df['quantity'].quantile(0.75)
+    iqr = q3 - q1
+    lower = q1 - 1.5 * iqr
+    upper = q3 + 1.5 * iqr
+    df['quantity'] = df['quantity'].clip(lower=lower, upper=upper)
+
+    # smooth
+    df['quantity_smooth'] = df['quantity'].rolling(window=3, min_periods=1).mean()
+
+    series = df['quantity_smooth'].astype(float)
+
+    try:
+        from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+        model = ExponentialSmoothing(
+            series,
+            trend='add',
+            seasonal=None,
+            initialization_method="estimated"
+        )
+
+        fit = model.fit(optimized=True)
+
+        forecast = fit.forecast(8)
+        forecast = pd.Series(forecast)
+
+        mean = float(forecast.mean())
+        std = float(series.std())
+        forecast_list = forecast.tolist()
+
+    except Exception as e:
+        print("Monthly forecast error:", e)
+        mean = float(series.mean())
+        std = float(series.std(ddof=1))
+        forecast_list = [mean] * 8
+        forecast = pd.Series(forecast_list)
+
+    if np.isnan(std) or std < 0:
+        std = 0
+
+    # error metrics: compare last available months
+    actual = series[-8:]
+    if len(actual) == len(forecast):
+        mae = np.mean(np.abs(actual.values - forecast.values))
+        rmse = np.sqrt(np.mean((actual.values - forecast.values) ** 2))
+        mape = np.mean(np.abs((actual.values - forecast.values) / np.maximum(actual.values, 1))) * 100
+    else:
+        mae, rmse, mape = 0, 0, 0
+
+    return mean, std, forecast_list, mae, rmse, mape
 
 # =========================
 # =========================

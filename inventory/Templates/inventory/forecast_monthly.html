@@ -1,0 +1,137 @@
+{% extends "inventory/base.html" %} {% block extra_styles %}
+<style>
+/* reuse same small styles as daily forecast */
+.evaluation-box { display: grid; grid-template-columns: 44px 1fr; gap:12px; align-items:start; padding:14px; border-radius:16px; border:1px solid #d8e2ef; }
+.evaluation-icon { width:44px; height:44px; border-radius:12px; display:grid; place-items:center; color:#fff; font-size:18px; }
+.evaluation-content strong { display:block; margin-bottom:6px; font-size:14px; color:#1f3442; }
+.evaluation-content p { margin:0; color:#385161; line-height:1.6; font-size:14px; }
+.evaluation-good { background: linear-gradient(135deg, rgba(116,176,149,0.12), rgba(98,170,177,0.1)); }
+.evaluation-good .evaluation-icon { background: linear-gradient(135deg, #4d8f78, #74b095); }
+.evaluation-medium { background: linear-gradient(135deg, rgba(107,152,183,0.12), rgba(98,170,177,0.1)); }
+.evaluation-medium .evaluation-icon { background: linear-gradient(135deg, #4f7ea1, #6b98b7); }
+.evaluation-bad { background: linear-gradient(135deg, rgba(196,83,83,0.12), rgba(222,107,107,0.1)); }
+.evaluation-bad .evaluation-icon { background: linear-gradient(135deg, #c45353, #de6b6b); }
+</style>
+{% endblock %} {% block content %}
+
+<div class="page-hero">
+  <div>
+    <h1 class="page-title">Dự báo theo tháng</h1>
+  </div>
+  <div class="hero-badge">Phân tích dự báo (theo tháng)</div>
+</div>
+
+<!-- PLANNING: this page is the monthly forecast (no cross-link to daily) -->
+
+<div class="content-grid">
+  <div class="panel">
+    <h2 class="panel-title">Chọn sản phẩm</h2>
+    <form method="POST" class="control-form">
+      {% csrf_token %}
+      <div class="field">
+        <label>Sản phẩm</label>
+        <select name="product_id" class="searchable">
+          <option value="">-- Chọn sản phẩm --</option>
+          {% for p in products %}
+          <option value="{{ p.id }}" {% if selected_product and p.id == selected_product.id %}selected{% endif %}>{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn-secondary">Chạy phân tích</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2 class="panel-title">Đánh giá mô hình</h2>
+    <p class="panel-subtitle">MAPE được dùng để đánh giá mức độ phù hợp của mô hình đối với sản phẩm đã chọn.</p>
+    {% if product_result %}
+    <div class="evaluation-box {{ product_result.evaluation_class }}">
+      <div class="evaluation-icon"><i class="{{ product_result.evaluation_icon }}"></i></div>
+      <div class="evaluation-content">
+        <strong>Đánh giá mô hình</strong>
+        <p>{{ product_result.evaluation_message }}</p>
+      </div>
+    </div>
+    {% else %}
+    <p class="muted-text">Chưa có dữ liệu dự báo. Hãy chọn sản phẩm để bắt đầu.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if product_result %}
+<div class="stats-grid">
+  <div class="stat-card stat-blue"><h3>Trung bình</h3><p>{{ product_result.mean|floatformat:2 }}</p></div>
+  <div class="stat-card stat-blue"><h3>Độ lệch chuẩn</h3><p>{{ product_result.std|floatformat:2 }}</p></div>
+  <div class="stat-card stat-blue"><h3>MAE</h3><p>{{ product_result.mae|floatformat:2 }}</p></div>
+  <div class="stat-card stat-blue"><h3>RMSE</h3><p>{{ product_result.rmse|floatformat:2 }}</p></div>
+  <div class="stat-card stat-red"><h3>MAPE</h3><p>{{ product_result.mape|floatformat:2 }}%</p></div>
+</div>
+{% endif %}
+
+<div class="table-card">
+  <div class="table-head"><div><h2>Dự báo 8 tháng tới</h2><p>Giá trị dự báo theo tháng (8 tháng tiếp theo).</p></div></div>
+  <div class="table-scroll">
+    <table>
+      <tr>
+        <th>Chỉ số</th>
+        {% for val in forecast_8 %}
+        <th>Tháng {{ forloop.counter }}</th>
+        {% empty %}
+        <th>Tháng 1</th>
+        <th>Tháng 2</th>
+        <th>Tháng 3</th>
+        <th>Tháng 4</th>
+        <th>Tháng 5</th>
+        <th>Tháng 6</th>
+        <th>Tháng 7</th>
+        <th>Tháng 8</th>
+        {% endfor %}
+      </tr>
+      <tr>
+        <th>Sản lượng</th>
+        {% for val in forecast_8 %}
+        <td>{{ val|floatformat:2 }}</td>
+        {% empty %}
+        <td colspan="8" class="empty-state">Chưa có dữ liệu dự báo tháng.</td>
+        {% endfor %}
+      </tr>
+    </table>
+  </div>
+</div>
+
+<div class="table-card">
+  <div class="table-head"><div><h2>Nhu cầu nguyên vật liệu theo BOM (tháng)</h2><p>Bảng quy đổi dự báo sản phẩm sang nhu cầu nguyên vật liệu theo tháng (8 tháng).</p></div></div>
+  <div class="table-scroll">
+    <table>
+      <tr>
+        <th>ID</th>
+        <th>Nguyên vật liệu</th>
+        <th>Trung bình</th>
+        <th>Độ lệch chuẩn</th>
+        <th>M1</th>
+        <th>M2</th>
+        <th>M3</th>
+        <th>M4</th>
+        <th>M5</th>
+        <th>M6</th>
+        <th>M7</th>
+        <th>M8</th>
+      </tr>
+      {% for m in material_results %}
+      <tr>
+        <td>{{ m.material_id }}</td>
+        <td>{{ m.material }}</td>
+        <td>{{ m.mean }}</td>
+        <td>{{ m.std }}</td>
+        {% for val in m.forecast_8 %}
+        <td>{{ val }}</td>
+        {% endfor %}
+      </tr>
+      {% empty %}
+      <tr><td colspan="12" class="empty-state">Chưa có kết quả quy đổi BOM. Hãy chọn sản phẩm trước.</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+{% endblock %}

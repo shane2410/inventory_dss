@@ -100,7 +100,7 @@
       }
 
       .sidebar {
-        width: 185px;
+        width: 190px;
         background: var(--nav-bg);
         color: white;
         font-size: 0.84em;
@@ -661,6 +661,47 @@
         height: 46px;
       }
 
+      /* Sidebar group (collapsible) styles */
+      .sidebar-group {
+        display: block;
+      }
+
+      .sidebar-group-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 10px;
+        color: rgba(255,255,255,0.75);
+        font-weight: 800;
+        font-size: 12px;
+        cursor: pointer;
+        border-radius: 10px;
+      }
+
+      .sidebar-group-header:hover {
+        background: rgba(255,255,255,0.04);
+      }
+
+      .sidebar-group-body {
+        display: block;
+        margin-top: 6px;
+        margin-bottom: 6px;
+      }
+
+      .sidebar-group-body.collapsed {
+        display: none;
+      }
+
+      .sidebar-group-header .caret {
+        transition: transform 0.18s ease;
+        opacity: 0.9;
+      }
+
+      .sidebar-group-header.open .caret {
+        transform: rotate(90deg);
+      }
+
       @media (max-width: 980px) {
         .sidebar {
           width: 100%;
@@ -760,69 +801,57 @@
       </div>
 
       <div class="sidebar-nav">
-        <a
-          href="{% url 'dashboard' %}"
-          class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
-        >
-          <i class="fas fa-chart-pie"></i>
-          <span>Tổng quan</span>
-        </a>
-        <a
-          href="{% url 'import-data' %}"
-          class="{% if request.resolver_match.url_name == 'import-data' %}active{% endif %}"
-          {% if not show_import_link %}style="display:none;"{% endif %}
-        >
-          <i class="fas fa-file-import"></i>
-          <span>Import dữ liệu</span>
-        </a>
-        <a
-          href="{% url 'import-multilevel-bom' %}"
-          class="{% if request.resolver_match.url_name == 'import-multilevel-bom' %}active{% endif %}"
-          {% if not show_multilevel_bom_link %}style="display:none;"{% endif %}
-        >
-          <i class="fas fa-diagram-project"></i>
-          <span>BOM đa cấp</span>
-        </a>
-        <a
-          href="{% url 'forecast' %}"
-          class="{% if request.resolver_match.url_name == 'forecast' %}active{% endif %}"
-          {% if not show_forecast_link %}style="display:none;"{% endif %}
-        >
-          <i class="fas fa-chart-line"></i>
-          <span>Dự báo nhu cầu</span>
-        </a>
-        <a
-          href="{% url 'material-list' %}"
-          class="{% if request.resolver_match.url_name == 'material-list' %}active{% endif %}"
-          {% if not show_material_link %}style="display:none;"{% endif %}
-        >
-          <i class="fas fa-cubes"></i>
-          <span>Quản lý vật liệu</span>
-        </a>
-        <a
-          href="{% url 'product-list' %}"
-          class="{% if request.resolver_match.url_name == 'product-list' %}active{% endif %}"
-          {% if not show_product_link %}style="display:none;"{% endif %}
-        >
-          <i class="fas fa-box-open"></i>
-          <span>Phân tích tồn kho</span>
-        </a>
-        <a
-          href="{% url 'abc' %}"
-          class="{% if request.resolver_match.url_name == 'abc' %}active{% endif %}"
-          {% if not show_abc_link %}style="display:none;"{% endif %}
-        >
-          <i class="fas fa-layer-group"></i>
-          <span>Phân tích ABC</span>
-        </a>
-        <a
-          href="{% url 'alert' %}"
-          class="{% if request.resolver_match.url_name == 'alert' %}active{% endif %}"
-          {% if not show_alert_link %}style="display:none;"{% endif %}
-        >
-          <i class="fas fa-bell"></i>
-          <span>Cảnh báo tồn kho</span>
-        </a>
+        <!-- OPERATIONS group (collapsible) -->
+        <div class="sidebar-group">
+          <div class="sidebar-group-header" data-group="operations" tabindex="0">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <i class="fas fa-briefcase"></i>
+              <span>OPERATIONS</span>
+            </div>
+            <i class="fas fa-chevron-right caret"></i>
+          </div>
+          <div class="sidebar-group-body" id="group-operations">
+            <a
+              href="{% url 'dashboard' %}"
+              class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
+            >
+              <i class="fas fa-chart-pie"></i>
+              <span>Tổng quan</span>
+            </a>
+            <a
+              href="{% url 'import-data' %}"
+              class="{% if request.resolver_match.url_name == 'import-data' %}active{% endif %}"
+              {% if not show_import_link %}style="display:none;"{% endif %}
+            >
+              <i class="fas fa-file-import"></i>
+              <span>Import dữ liệu</span>
+            </a>
+            <a
+              href="{% url 'import-multilevel-bom' %}"
+              class="{% if request.resolver_match.url_name == 'import-multilevel-bom' %}active{% endif %}"
+              {% if not show_multilevel_bom_link %}style="display:none;"{% endif %}
+            >
+              <i class="fas fa-diagram-project"></i>
+              <span>BOM đa cấp</span>
+            </a>
+            <a
+              href="{% url 'forecast' %}"
+              class="{% if request.resolver_match.url_name == 'forecast' %}active{% endif %}"
+              {% if not show_forecast_link %}style="display:none;"{% endif %}
+            >
+              <i class="fas fa-chart-line"></i>
+              <span>Dự báo nhu cầu</span>
+            </a>
+            <a
+              href="{% url 'alert' %}"
+              class="{% if request.resolver_match.url_name == 'alert' %}active{% endif %}"
+              {% if not show_alert_link %}style="display:none;"{% endif %}
+            >
+              <i class="fas fa-bell"></i>
+              <span>Cảnh báo tồn kho</span>
+            </a>
+          </div>
+        </div>
         {% if show_system_link %}
         <a
           href="{% url 'system-settings' %}"
@@ -841,6 +870,54 @@
           <span>Quyền truy cập</span>
         </a>
         {% endif %}
+        <!-- PLANNING group (collapsible) -->
+        <div style="height:8px"></div>
+        <div class="sidebar-group">
+          <div class="sidebar-group-header" data-group="planning" tabindex="0">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <i class="fas fa-tasks"></i>
+              <span>PLANNING</span>
+            </div>
+            <i class="fas fa-chevron-right caret"></i>
+          </div>
+          <div class="sidebar-group-body" id="group-planning">
+            <a
+              href="{% url 'forecast_monthly' %}"
+              class="{% if request.resolver_match.url_name == 'forecast_monthly' %}active{% endif %}"
+            >
+              <i class="fas fa-calendar-alt"></i>
+              <span>Dự báo tổng</span>
+            </a>
+            <a
+              href="{% url 'plan-synthesis' %}"
+              class="{% if request.resolver_match.url_name == 'plan-synthesis' %}active{% endif %}"
+            >
+              <i class="fas fa-tasks"></i>
+              <span>Kế hoạch tổng hợp</span>
+            </a>
+            <a
+              href="{% url 'product-decomposition' %}"
+              class="{% if request.resolver_match.url_name == 'product-decomposition' %}active{% endif %}"
+            >
+              <i class="fas fa-project-diagram"></i>
+              <span>Phân rã sản phẩm</span>
+            </a>
+            <a
+              href="{% url 'mps' %}"
+              class="{% if request.resolver_match.url_name == 'mps' %}active{% endif %}"
+            >
+              <i class="fas fa-stream"></i>
+              <span>MPS</span>
+            </a>
+            <a
+              href="{% url 'mrp' %}"
+              class="{% if request.resolver_match.url_name == 'mrp' %}active{% endif %}"
+            >
+              <i class="fas fa-cogs"></i>
+              <span>MRP</span>
+            </a>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -895,6 +972,50 @@
             body.classList.add("sidebar-collapsed");
           }
         });
+        // Collapsible sidebar groups (OPERATIONS / PLANNING)
+        function initGroupToggle(groupName, openByDefault) {
+          const header = document.querySelector(
+            `.sidebar-group-header[data-group="${groupName}"]`
+          );
+          const bodyEl = document.getElementById(`group-${groupName}`);
+          if (!header || !bodyEl) return;
+          const key = `inventory_group_${groupName}_open`;
+
+          function setOpen(open) {
+            if (open) {
+              header.classList.add("open");
+              bodyEl.classList.remove("collapsed");
+            } else {
+              header.classList.remove("open");
+              bodyEl.classList.add("collapsed");
+            }
+            localStorage.setItem(key, open ? "true" : "false");
+          }
+
+          const saved = localStorage.getItem(key);
+          if (saved === null) {
+            setOpen(Boolean(openByDefault));
+          } else {
+            setOpen(saved === "true");
+          }
+
+          header.addEventListener("click", function () {
+            setOpen(!header.classList.contains("open"));
+          });
+          header.addEventListener("keypress", function (ev) {
+            if (ev.key === "Enter" || ev.key === " ") {
+              ev.preventDefault();
+              setOpen(!header.classList.contains("open"));
+            }
+          });
+        }
+
+        try {
+          initGroupToggle("operations", true);
+          initGroupToggle("planning", false);
+        } catch (e) {
+          console.warn("Sidebar group init failed", e);
+        }
       })();
     </script>
     {% block extra_scripts %}{% endblock %}

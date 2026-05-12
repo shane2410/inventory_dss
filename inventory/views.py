@@ -6,7 +6,7 @@ from django.db.models import Sum
 from openpyxl import Workbook, load_workbook
 from .models import Product, Material, SalesData, Transaction, BOM
 from .forms import ImportDataForm
-from .services import aggregate_material_demand, abc_classification, forecast_product, run_dss
+from .services import aggregate_material_demand, abc_classification, forecast_product, forecast_product_monthly, run_dss
 from .recommendations import build_dashboard_recommendations, build_inventory_alert_recommendations, build_inventory_watchlist_recommendations
 from datetime import datetime, timedelta, date
 from .permissions import (
@@ -23,6 +23,38 @@ from .permissions import (
     get_user_role_label,
     role_required,
 )
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def plan_synthesis(request):
+    return render(request, 'inventory/placeholder.html', {
+        'title': 'Kế hoạch tổng hợp',
+        'message': 'Trang Kế hoạch tổng hợp đang được xây dựng.'
+    })
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def product_decomposition(request):
+    return render(request, 'inventory/placeholder.html', {
+        'title': 'Phân rã sản phẩm',
+        'message': 'Trang Phân rã sản phẩm đang được xây dựng.'
+    })
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def mps(request):
+    return render(request, 'inventory/placeholder.html', {
+        'title': 'MPS',
+        'message': 'Trang MPS (Master Production Schedule) đang được xây dựng.'
+    })
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def mrp(request):
+    return render(request, 'inventory/placeholder.html', {
+        'title': 'MRP',
+        'message': 'Trang MRP đang được xây dựng.'
+    })
 
 
 def _apply_recommendation_filters(recommendations, urgency='ALL', abc='ALL', action='ALL'):
@@ -512,6 +544,13 @@ def forecast(request):
     material_results = []
     forecast_7 = []
 
+    # Select data source for this view. By default we use all SalesData.
+    # If you want OPERATIONS to use a different input, set `sales_qs` to a
+    # filtered queryset, for example:
+    # sales_qs = SalesData.objects.filter(source='operations')
+    # The forecasting functions accept an optional `sales_qs` parameter.
+    sales_qs = None
+
     # =========================
     # PRODUCT FORECAST
     # =========================
@@ -521,7 +560,7 @@ def forecast(request):
         if product_id:
             selected_product = Product.objects.get(id=product_id)
 
-            mean, std, forecast_7, mae, rmse, mape = forecast_product(product_id)
+            mean, std, forecast_7, mae, rmse, mape = forecast_product(product_id, sales_qs=sales_qs)
 
             mape_value = float(round(mape, 2))
             if mape_value < 10:
@@ -590,7 +629,7 @@ def forecast(request):
                     [float(x or 0) for x in (forecast_7 or [0] * 7)],
                 )
             else:
-                mean, std, product_forecast_7, _, _, _ = forecast_product(selected_product.id)
+                mean, std, product_forecast_7, _, _, _ = forecast_product(selected_product.id, sales_qs=sales_qs)
                 product_forecasts[selected_product.id] = (mean, std, product_forecast_7)
 
             selected_material_ids = set(
@@ -610,7 +649,7 @@ def forecast(request):
                     continue
 
                 try:
-                    mean, std, product_forecast_7, _, _, _ = forecast_product(product_id)
+                    mean, std, product_forecast_7, _, _, _ = forecast_product(product_id, sales_qs=sales_qs)
                     product_forecasts[product_id] = (mean, std, product_forecast_7)
                 except Exception as e:
                     print(f"Forecast error for shared product {product_id}: {e}")
@@ -705,6 +744,189 @@ def forecast(request):
         "product_result": product_result,
         "material_results": material_results,
         "forecast_7": forecast_7
+    })
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def forecast_monthly(request):
+    from .models import Product, BOM
+    from collections import defaultdict
+    import math
+
+    products = Product.objects.all()
+
+    selected_product = None
+    product_result = None
+    material_results = []
+    forecast_8 = []
+
+    # Data source selection for monthly planning forecasts.
+    # Example to use a different dataset for PLANNING imports:
+    # sales_qs = SalesData.objects.filter(source='planning')
+    sales_qs = None
+
+    if request.method == 'POST':
+        product_id = request.POST.get('product_id')
+
+        if product_id:
+            selected_product = Product.objects.get(id=product_id)
+            mean, std, forecast_8, mae, rmse, mape = forecast_product_monthly(product_id, sales_qs=sales_qs)
+
+            mape_value = float(round(mape, 2))
+            if mape_value < 10:
+                mape_level = "good"
+                evaluation_class = "evaluation-good"
+                evaluation_icon = "fas fa-check"
+                evaluation_message = (
+                    "Mô hình có độ chính xác rất cao (MAPE < 10%). "
+                    "Kết quả dự báo rất đáng tin cậy."
+                )
+            elif mape_value < 20:
+                mape_level = "medium"
+                evaluation_class = "evaluation-medium"
+                evaluation_icon = "fas fa-info"
+                evaluation_message = (
+                    "Mô hình ở mức chấp nhận được (10% - 20%). "
+                    "Cần theo dõi thêm biến động thực tế."
+                )
+            else:
+                mape_level = "bad"
+                evaluation_class = "evaluation-bad"
+                evaluation_icon = "fas fa-exclamation-triangle"
+                evaluation_message = (
+                    "Độ sai số cao (MAPE > 20%). Nhu cầu sản phẩm này có biến động "
+                    "quá lớn, mô hình hiện tại không phù hợp."
+                )
+
+            product_result = {
+                "name": selected_product.name,
+                "mean": round(mean, 2),
+                "std": round(std, 2),
+                "forecast_8": [round(x, 2) for x in forecast_8],
+                "mae": round(mae, 2),
+                "rmse": round(rmse, 2),
+                "mape": mape_value,
+                "mape_level": mape_level,
+                "evaluation_class": evaluation_class,
+                "evaluation_icon": evaluation_icon,
+                "evaluation_message": evaluation_message,
+            }
+
+    # Aggregate materials similar to daily view but with 8-month vectors
+    material_dict = defaultdict(lambda: {
+        "material": "",
+        "material_id": "",
+        "mean": 0,
+        "variance": 0,
+        "forecast_8": [0] * 8
+    })
+
+    all_boms = BOM.objects.select_related('material', 'product')
+    product_forecasts = {}
+    if request.method == 'POST' and selected_product:
+        try:
+            if product_result is not None:
+                product_forecasts[selected_product.id] = (
+                    float(product_result.get('mean', 0) or 0),
+                    float(product_result.get('std', 0) or 0),
+                    [float(x or 0) for x in (forecast_8 or [0] * 8)],
+                )
+            else:
+                mean, std, product_forecast_8, _, _, _ = forecast_product_monthly(selected_product.id, sales_qs=sales_qs)
+                product_forecasts[selected_product.id] = (mean, std, product_forecast_8)
+
+            selected_material_ids = set(
+                BOM.objects.filter(product=selected_product).values_list('material_id', flat=True)
+            )
+
+            shared_product_ids = set()
+            if selected_material_ids:
+                shared_product_ids = set(
+                    BOM.objects.filter(material_id__in=selected_material_ids)
+                    .values_list('product_id', flat=True)
+                    .distinct()
+                )
+
+            for product_id in shared_product_ids:
+                if product_id in product_forecasts:
+                    continue
+                try:
+                    mean, std, product_forecast_8, _, _, _ = forecast_product_monthly(product_id, sales_qs=sales_qs)
+                    product_forecasts[product_id] = (mean, std, product_forecast_8)
+                except Exception as e:
+                    print(f"Monthly forecast error for shared product {product_id}: {e}")
+        except Exception as e:
+            print(f"Monthly forecast aggregation error: {e}")
+
+    selected_boms = []
+    shared_boms = []
+    if selected_product:
+        selected_boms = list(
+            BOM.objects.filter(product=selected_product).select_related('material')
+        )
+        selected_material_ids = set(bom.material_id for bom in selected_boms)
+        shared_boms = list(
+            BOM.objects.filter(material_id__in=selected_material_ids)
+            .exclude(product=selected_product)
+            .select_related('material', 'product')
+        )
+    else:
+        selected_material_ids = set()
+
+    # dedupe quantities
+    selected_quantities = {}
+    selected_materials = {}
+    for bom in selected_boms:
+        if bom.material_id not in selected_quantities:
+            selected_quantities[bom.material_id] = bom.quantity_per_unit or 0
+            selected_materials[bom.material_id] = bom.material
+
+    material_shared_boms = {}
+    for bom in shared_boms:
+        material_shared_boms.setdefault(bom.material_id, []).append(bom)
+
+    material_results = []
+    if selected_product:
+        selected_stats = product_forecasts.get(selected_product.id, (0.0, 0.0, [0] * 8))
+        selected_mean = float(selected_stats[0] or 0.0)
+        selected_std = float(selected_stats[1] or 0.0)
+        selected_forecast_8 = [float(x or 0.0) for x in selected_stats[2]]
+
+        for material_id, quantity in selected_quantities.items():
+            material = selected_materials.get(material_id)
+            qty = float(quantity or 0)
+            material_mean = selected_mean * qty
+            material_variance = (selected_std * qty) ** 2
+            material_forecast_8 = [round(val * qty, 2) for val in selected_forecast_8]
+
+            for bom in material_shared_boms.get(material_id, []):
+                other_stats = product_forecasts.get(bom.product_id, (0.0, 0.0, [0] * 8))
+                other_mean = float(other_stats[0] or 0.0)
+                other_std = float(other_stats[1] or 0.0)
+                other_forecast_8 = [float(x or 0.0) for x in other_stats[2]]
+                other_qty = float(bom.quantity_per_unit or 0)
+
+                material_mean += other_mean * other_qty
+                material_variance += (other_std * other_qty) ** 2
+                material_forecast_8 = [
+                    round(current + other_val * other_qty, 2)
+                    for current, other_val in zip(material_forecast_8, other_forecast_8)
+                ]
+
+            material_results.append({
+                "material": material.name,
+                "material_id": material.source_id or f"NVL{material.id}",
+                "mean": round(material_mean, 2),
+                "std": round(math.sqrt(material_variance), 2),
+                "forecast_8": material_forecast_8,
+            })
+
+    return render(request, 'inventory/forecast_monthly.html', {
+        'products': products,
+        'selected_product': selected_product,
+        'product_result': product_result,
+        'material_results': material_results,
+        'forecast_8': forecast_8,
     })
 from .services import abc_classification, forecast_product
 from .models import Product, BOM
