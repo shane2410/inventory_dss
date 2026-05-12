@@ -78,7 +78,7 @@
           transform: scale(calc(1 / 0.8));
           transform-origin: top left;
           /* ensure layout/flow width matches the pre-scale value so .main positions correctly */
-          width: calc(220px / (1 / 0.8));
+          width: 150px;
           padding: calc(24px / (1 / 0.8)) calc(18px / (1 / 0.8));
         }
 
@@ -100,12 +100,12 @@
       }
 
       .sidebar {
-        width: 220px;
+        width: 185px;
         background: var(--nav-bg);
         color: white;
-        font-size: 0.95em;
+        font-size: 0.84em;
         height: 100vh;
-        padding: 24px 18px;
+        padding: 18px 13px;
         position: fixed;
         left: 0;
         top: 0;
@@ -177,15 +177,15 @@
       .sidebar-nav {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 8px;
       }
 
       .sidebar a {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
         color: white;
-        padding: 12px 14px;
+        padding: 9px 10px;
         text-decoration: none;
         border-radius: 14px;
         font-weight: 700;
@@ -195,9 +195,9 @@
       }
 
       .sidebar a i {
-        width: 20px;
+        width: 15px;
         text-align: center;
-        font-size: 13.7px;
+        font-size: 10px;
         flex: 0 0 auto;
       }
 
@@ -231,7 +231,7 @@
 
       body.sidebar-collapsed .sidebar {
         width: 77px;
-        padding: 24px 12px;
+        padding: 18px 9px;
       }
 
       body.sidebar-collapsed .main {
