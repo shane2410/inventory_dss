@@ -8,7 +8,10 @@ from inventory.models import SalesData, BOM, Material, Product
 # 1. FORECAST (CÓ XỬ LÝ DATA)
 # =========================
 def forecast_product(product_id, sales_qs=None):
-    sales = SalesData.objects.filter(product_id=product_id).values('date', 'quantity')
+    if sales_qs is None:
+        sales = SalesData.objects.filter(product_id=product_id).values('date', 'quantity')
+    else:
+        sales = sales_qs.filter(product_id=product_id).values('date', 'quantity')
     df = pd.DataFrame(list(sales))
 
     if df.empty or len(df) < 5:
@@ -97,26 +100,28 @@ def forecast_product(product_id, sales_qs=None):
     return mean, std, forecast_list, mae, rmse, mape
 
 
-def aggregate_material_demand():
+def aggregate_material_demand(source='operations'):
     demand_stats = defaultdict(lambda: {"mean": 0.0, "variance": 0.0})
 
     from .models import SalesData
 
+    sales_scope = SalesData.objects.filter(source=source)
+
     product_forecasts = {}
     products_with_sales = set(
-        SalesData.objects.values_list('product_id', flat=True).distinct()
+        sales_scope.values_list('product_id', flat=True).distinct()
     )
 
     for product_id in products_with_sales:
         try:
-            mean, std, _, _, _, _ = forecast_product(product_id, sales_qs=None)
+            mean, std, _, _, _, _ = forecast_product(product_id, sales_qs=sales_scope)
             product_forecasts[product_id] = (
                 max(float(mean or 0), 0.0),
                 max(float(std or 0), 0.0),
             )
         except Exception:
             values = list(
-                SalesData.objects.filter(product_id=product_id)
+                sales_scope.filter(product_id=product_id)
                 .values_list('quantity', flat=True)
             )
             if values:
@@ -261,6 +266,79 @@ def forecast_product_monthly(product_id, sales_qs=None):
 
     return mean, std, forecast_list, mae, rmse, mape
 
+
+def forecast_monthly_total(history_qs=None):
+    """Forecast a total monthly production series from imported month/quantity rows."""
+    from .models import MonthlyProductionData
+
+    if history_qs is None:
+        history_qs = MonthlyProductionData.objects.filter(
+            source=MonthlyProductionData.SOURCE_PLANNING
+        )
+
+    df = pd.DataFrame(list(history_qs.values('month', 'quantity')))
+
+    if df.empty or len(df) < 3:
+        return 0, 0, [0] * 8, 0, 0, 0
+
+    df['month'] = pd.to_datetime(df['month'])
+    df = df.sort_values('month')
+    df = df[df['quantity'] >= 0]
+
+    df = df.set_index('month').groupby(pd.Grouper(freq='MS'))['quantity'].sum().reset_index()
+    full_range = pd.date_range(start=df['month'].min(), end=df['month'].max(), freq='MS')
+    df = df.set_index('month').reindex(full_range, fill_value=0)
+    df.index.name = 'month'
+
+    q1 = df['quantity'].quantile(0.25)
+    q3 = df['quantity'].quantile(0.75)
+    iqr = q3 - q1
+    lower = q1 - 1.5 * iqr
+    upper = q3 + 1.5 * iqr
+    df['quantity'] = df['quantity'].clip(lower=lower, upper=upper)
+    df['quantity_smooth'] = df['quantity'].rolling(window=3, min_periods=1).mean()
+
+    series = df['quantity_smooth'].astype(float)
+
+    try:
+        from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+        model = ExponentialSmoothing(
+            series,
+            trend='add',
+            seasonal=None,
+            initialization_method='estimated'
+        )
+
+        fit = model.fit(optimized=True)
+        forecast = pd.Series(fit.forecast(8))
+        mean = float(forecast.mean())
+        std = float(series.std())
+        forecast_list = forecast.tolist()
+
+    except Exception as e:
+        print('Monthly total forecast error:', e)
+        mean = float(series.mean())
+        std = float(series.std(ddof=1))
+        forecast_list = [mean] * 8
+        forecast = pd.Series(forecast_list)
+
+    if np.isnan(std) or std < 0:
+        std = 0
+
+    actual = series[-8:]
+    if len(actual) == len(forecast):
+        try:
+            mae = float(np.mean(np.abs(actual.values - forecast.values)))
+            rmse = float(np.sqrt(np.mean((actual.values - forecast.values) ** 2)))
+            mape = float(np.mean(np.abs((actual.values - forecast.values) / np.where(actual.values == 0, 1, actual.values))) * 100)
+        except Exception:
+            mae = rmse = mape = 0
+    else:
+        mae = rmse = mape = 0
+
+    return mean, std, forecast_list, mae, rmse, mape
+
 # =========================
 # =========================
 # 4. COST + GRID SEARCH (FIXED)
@@ -360,8 +438,8 @@ def abc_classification(material_list):
 
 
 # =========================
-def run_dss(product_id):
-    from .models import BOM, Product
+def run_dss(product_id, source='operations'):
+    from .models import BOM, Product, SalesData
 
     product = Product.objects.get(id=product_id)
 
@@ -383,9 +461,8 @@ def run_dss(product_id):
 
     unique_boms = list(material_bom_map.values())
 
-    # Use aggregated material demand across all products so material-level ROP is
-    # consistent with the global inventory forecast and alert calculations.
-    material_stats = aggregate_material_demand()
+    # Use aggregated material demand with specified source
+    material_stats = aggregate_material_demand(source=source)
 
     for bom in unique_boms:
         material = bom.material

@@ -1,0 +1,142 @@
+{% extends "inventory/base.html" %}
+{% block extra_styles %}
+<style>
+.upload-note { margin-top: 10px; color: #5a7184; font-size: 13px; line-height: 1.6; }
+.history-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.history-chip { padding: 14px 16px; border-radius: 16px; background: linear-gradient(135deg, rgba(80,126,161,0.08), rgba(116,176,149,0.08)); border: 1px solid #d7e1ec; }
+.history-chip h3 { margin: 0 0 6px; font-size: 13px; color: #506272; }
+.history-chip p { margin: 0; font-size: 20px; font-weight: 700; color: #1f3442; }
+.section-spacer { margin-top: 24px; }
+.history-table td, .history-table th { white-space: nowrap; }
+</style>
+{% endblock %}
+{% block content %}
+
+<div class="page-hero">
+  <div>
+    <h1 class="page-title">Dự báo theo tháng</h1>
+  </div>
+  <div class="hero-badge">Nguồn dữ liệu kế hoạch</div>
+</div>
+
+<div class="content-grid">
+  <div class="panel">
+    <h2 class="panel-title">Import dữ liệu sản xuất quá khứ</h2>
+    <form method="POST" enctype="multipart/form-data" class="control-form">
+      {% csrf_token %}
+      <input type="hidden" name="import_monthly_excel" value="1">
+      <div class="field">
+        <label>File Excel</label>
+        {{ form.file }}
+      </div>
+      <button type="submit" class="btn-secondary">Import dữ liệu</button>
+    </form>
+    <p class="upload-note">File cần có 2 cột: <strong>Tháng</strong> và <strong>Sản lượng sản xuất</strong>. Ví dụ: 01/2025, 399950.</p>
+    <p class="upload-note">Khi import, dữ liệu lịch sử tháng của planning sẽ được cập nhật và hiển thị ngay bên dưới.</p>
+    {% if result_message %}
+    <div class="success-message">{{ result_message }}</div>
+    {% endif %}
+    {% if error_message %}
+    <div class="error-message">{{ error_message }}</div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2 class="panel-title">Tóm tắt dữ liệu</h2>
+    <p class="panel-subtitle">Dự báo tổng được tính từ chuỗi sản lượng tháng đã import, không dùng sản phẩm, vật tư hay sales của OPERATIONS.</p>
+    {% if history_rows %}
+    {% with last_row=history_rows|last %}
+    <div class="history-summary">
+      <div class="history-chip">
+        <h3>Số tháng dữ liệu</h3>
+        <p>{{ history_rows|length }}</p>
+      </div>
+      <div class="history-chip">
+        <h3>Tháng mới nhất</h3>
+        <p>{{ last_row.month }}</p>
+      </div>
+      <div class="history-chip">
+        <h3>Giá trị gần nhất</h3>
+        <p>{{ last_row.quantity|floatformat:0 }}</p>
+      </div>
+    </div>
+    {% endwith %}
+    {% else %}
+    <p class="muted-text">Chưa có dữ liệu lịch sử. Hãy import file Excel để bắt đầu dự báo.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="table-card section-spacer">
+  <div class="table-head">
+    <div>
+      <h2>Dữ liệu lịch sử đã import</h2>
+      <p>Bảng này hiển thị trực quan dữ liệu sản xuất quá khứ dùng cho dự báo tổng.</p>
+    </div>
+  </div>
+  <div class="table-scroll">
+    <table class="history-table">
+      <tr>
+        <th>Tháng</th>
+        <th>Sản lượng sản xuất</th>
+      </tr>
+      {% for row in history_rows %}
+      <tr>
+        <td>{{ row.month }}</td>
+        <td>{{ row.quantity|floatformat:0 }}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="2" class="empty-state">Chưa có dữ liệu lịch sử.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="table-card section-spacer">
+  <div class="table-head">
+    <div>
+      <h2>Dự báo 8 tháng tới</h2>
+      <p>Kết quả dự báo tổng dựa trên chuỗi dữ liệu sản xuất đã import.</p>
+    </div>
+  </div>
+  {% if forecast_result %}
+  <div class="stats-grid">
+    <div class="stat-card stat-blue"><h3>Trung bình</h3><p>{{ forecast_result.mean|floatformat:2 }}</p></div>
+    <div class="stat-card stat-blue"><h3>Độ lệch chuẩn</h3><p>{{ forecast_result.std|floatformat:2 }}</p></div>
+    <div class="stat-card stat-blue"><h3>MAE</h3><p>{{ forecast_result.mae|floatformat:2 }}</p></div>
+    <div class="stat-card stat-blue"><h3>RMSE</h3><p>{{ forecast_result.rmse|floatformat:2 }}</p></div>
+    <div class="stat-card stat-red"><h3>MAPE</h3><p>{{ forecast_result.mape|floatformat:2 }}%</p></div>
+  </div>
+  {% endif %}
+  <div class="table-scroll">
+    <table>
+      <tr>
+        <th>Chỉ số</th>
+        {% for row in forecast_8_rows %}
+        <th>{{ row.month }}</th>
+        {% empty %}
+        <th>Tháng 1</th>
+        <th>Tháng 2</th>
+        <th>Tháng 3</th>
+        <th>Tháng 4</th>
+        <th>Tháng 5</th>
+        <th>Tháng 6</th>
+        <th>Tháng 7</th>
+        <th>Tháng 8</th>
+        {% endfor %}
+      </tr>
+      <tr>
+        <th>Sản lượng dự báo</th>
+        {% for row in forecast_8_rows %}
+        <td>{{ row.quantity|floatformat:2 }}</td>
+        {% empty %}
+        <td colspan="8" class="empty-state">Chưa có dữ liệu dự báo tháng.</td>
+        {% endfor %}
+      </tr>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

@@ -285,11 +285,12 @@
 <div class="import-page">
   <div class="page-hero">
     <div>
-      <h1 class="page-title">Import dữ liệu</h1>
+      <h1 class="page-title">{{ page_title|default:'Import dữ liệu' }}</h1>
       <p class="page-subtitle">
-        Nhập dữ liệu bán hàng hoặc giao dịch từ file Excel
+        {{ page_subtitle|default:'Nhập dữ liệu bán hàng hoặc giao dịch từ file Excel' }}
       </p>
     </div>
+    <div class="hero-badge">Nguồn: {{ sales_source_label|default:'OPERATIONS' }}</div>
   </div>
 
   <div class="import-layout">
@@ -308,6 +309,7 @@
           <label>Chọn loại dữ liệu cần import:</label>
           <div class="radio-group">
             {% for value, label in form.import_type.field.choices %}
+            {% if sales_source_label == 'OPERATIONS' or value == 'sales' %}
             <div class="radio-item">
               <input
                 type="radio"
@@ -318,6 +320,7 @@
               />
               <label for="id_import_type_{{ forloop.counter0 }}" class="radio-label">{{ label }}</label>
             </div>
+            {% endif %}
             {% endfor %}
           </div>
         </div>
@@ -357,6 +360,7 @@
           <li><strong>Cột C:</strong> Số lượng (quantity)</li>
         </ul>
         <br />
+        {% if sales_source_label == 'OPERATIONS' %}
         <strong>Đối với dữ liệu giao dịch (Transaction):</strong>
         <ul>
           <li><strong>Cột A:</strong> Tên vật liệu (material name)</li>
@@ -364,6 +368,7 @@
           <li><strong>Cột C:</strong> Loại giao dịch (IN hoặc OUT)</li>
           <li><strong>Cột D:</strong> Ngày giao dịch (dd/mm/yyyy hoặc yyyy-mm-dd)</li>
         </ul>
+        {% endif %}
         <p style="margin: 12px 0 0; font-style: italic;">
           ⚠️ Dòng đầu tiên sẽ được bỏ qua (tiêu đề). Dữ liệu bắt đầu từ dòng 2.
         </p>
@@ -404,6 +409,7 @@
       {% endif %}
       </div>
 
+      {% if sales_source_label == 'OPERATIONS' %}
       <div class="manual-panel">
         <h3>Nhập giao dịch kho</h3>
         <form method="POST">
@@ -432,6 +438,7 @@
           <button type="submit" class="manual-submit">Thêm giao dịch</button>
         </form>
       </div>
+      {% endif %}
     </div>
   </div>
 </div>

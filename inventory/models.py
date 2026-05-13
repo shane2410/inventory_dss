@@ -87,18 +87,38 @@ class MultiLevelBOMEdge(models.Model):
 # SALES DATA (Demand)
 # =========================
 class SalesData(models.Model):
+    SOURCE_OPERATIONS = 'operations'
+    SOURCE_PLANNING = 'planning'
+    SOURCE_CHOICES = (
+        (SOURCE_OPERATIONS, 'Operations'),
+        (SOURCE_PLANNING, 'Planning'),
+    )
+
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     date = models.DateField(default=date.today)  # 👉 FIX quan trọng
     quantity = models.IntegerField()
+    source = models.CharField(
+        max_length=20,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_OPERATIONS,
+        db_index=True,
+    )
 
     def __str__(self):
-        return f"{self.product} - {self.date}"
+        return f"{self.product} - {self.date} ({self.source})"
 
 
 # =========================
 # TRANSACTION
 # =========================
 class Transaction(models.Model):
+    SOURCE_OPERATIONS = 'operations'
+    SOURCE_PLANNING = 'planning'
+    SOURCE_CHOICES = (
+        (SOURCE_OPERATIONS, 'Operations'),
+        (SOURCE_PLANNING, 'Planning'),
+    )
+    
     TRANSACTION_TYPE = (
         ('IN', 'Nhập kho'),
         ('OUT', 'Xuất kho'),
@@ -108,6 +128,38 @@ class Transaction(models.Model):
     quantity = models.IntegerField()
     transaction_type = models.CharField(max_length=3, choices=TRANSACTION_TYPE)
     date = models.DateField()
+    source = models.CharField(
+        max_length=20,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_OPERATIONS,
+        db_index=True,
+    )
 
     def __str__(self):
-        return f"{self.material} - {self.transaction_type} - {self.quantity}"
+        return f"{self.material} - {self.transaction_type} - {self.quantity} ({self.source})"
+
+
+# =========================
+# MONTHLY PRODUCTION HISTORY
+# =========================
+class MonthlyProductionData(models.Model):
+    SOURCE_PLANNING = 'planning'
+    SOURCE_CHOICES = (
+        (SOURCE_PLANNING, 'Planning'),
+    )
+
+    month = models.DateField(db_index=True)
+    quantity = models.FloatField()
+    source = models.CharField(
+        max_length=20,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_PLANNING,
+        db_index=True,
+    )
+
+    class Meta:
+        ordering = ['month']
+        unique_together = ('month', 'source')
+
+    def __str__(self):
+        return f"{self.month:%m/%Y} - {self.quantity} ({self.source})"

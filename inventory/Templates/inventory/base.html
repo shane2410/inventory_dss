@@ -848,20 +848,36 @@
               <span>Import dữ liệu</span>
             </a>
             <a
-              href="{% url 'import-multilevel-bom' %}"
-              class="{% if request.resolver_match.url_name == 'import-multilevel-bom' %}active{% endif %}"
-              {% if not show_multilevel_bom_link %}style="display:none;"{% endif %}
-            >
-              <i class="fas fa-diagram-project"></i>
-              <span>BOM đa cấp</span>
-            </a>
-            <a
               href="{% url 'forecast' %}"
               class="{% if request.resolver_match.url_name == 'forecast' %}active{% endif %}"
               {% if not show_forecast_link %}style="display:none;"{% endif %}
             >
               <i class="fas fa-chart-line"></i>
               <span>Dự báo nhu cầu</span>
+            </a>
+            <a
+              href="{% url 'material-list' %}"
+              class="{% if request.resolver_match.url_name == 'material-list' %}active{% endif %}"
+              {% if not show_material_link %}style="display:none;"{% endif %}
+            >
+              <i class="fas fa-cubes"></i>
+              <span>Quản lý vật liệu</span>
+            </a>
+            <a
+              href="{% url 'product-list' %}"
+              class="{% if request.resolver_match.url_name == 'product-list' %}active{% endif %}"
+              {% if not show_product_link %}style="display:none;"{% endif %}
+            >
+              <i class="fas fa-box-open"></i>
+              <span>Phân tích tồn kho</span>
+            </a>
+            <a
+              href="{% url 'abc' %}"
+              class="{% if request.resolver_match.url_name == 'abc' %}active{% endif %}"
+              {% if not show_abc_link %}style="display:none;"{% endif %}
+            >
+              <i class="fas fa-layer-group"></i>
+              <span>Phân tích ABC</span>
             </a>
             <a
               href="{% url 'alert' %}"
@@ -873,24 +889,6 @@
             </a>
           </div>
         </div>
-        {% if show_system_link %}
-        <a
-          href="{% url 'system-settings' %}"
-          class="{% if request.resolver_match.url_name == 'system-settings' %}active{% endif %}"
-        >
-          <i class="fas fa-sliders-h"></i>
-          <span>Hệ thống</span>
-        </a>
-        {% endif %}
-        {% if show_access_control_link %}
-        <a
-          href="{% url 'access-control' %}"
-          class="{% if request.resolver_match.url_name == 'access-control' %}active{% endif %}"
-        >
-          <i class="fas fa-user-shield"></i>
-          <span>Quyền truy cập</span>
-        </a>
-        {% endif %}
         <!-- PLANNING group (collapsible) -->
         <div style="height:8px"></div>
         <div class="sidebar-group">
@@ -931,6 +929,14 @@
               <span>MPS</span>
             </a>
             <a
+              href="{% url 'import-multilevel-bom' %}"
+              class="{% if request.resolver_match.url_name == 'import-multilevel-bom' %}active{% endif %}"
+              {% if not show_multilevel_bom_link %}style="display:none;"{% endif %}
+            >
+              <i class="fas fa-diagram-project"></i>
+              <span>BOM đa cấp</span>
+            </a>
+            <a
               href="{% url 'mrp' %}"
               class="{% if request.resolver_match.url_name == 'mrp' %}active{% endif %}"
             >
@@ -939,6 +945,24 @@
             </a>
           </div>
         </div>
+        {% if show_system_link %}
+        <a
+          href="{% url 'system-settings' %}"
+          class="{% if request.resolver_match.url_name == 'system-settings' %}active{% endif %}"
+        >
+          <i class="fas fa-sliders-h"></i>
+          <span>Hệ thống</span>
+        </a>
+        {% endif %}
+        {% if show_access_control_link %}
+        <a
+          href="{% url 'access-control' %}"
+          class="{% if request.resolver_match.url_name == 'access-control' %}active{% endif %}"
+        >
+          <i class="fas fa-user-shield"></i>
+          <span>Quyền truy cập</span>
+        </a>
+        {% endif %}
       </div>
     </div>
 

@@ -1,6 +1,13 @@
 from django import forms
 from .models import Material, Transaction
 
+
+class MonthlyForecastImportForm(forms.Form):
+    file = forms.FileField(
+        label='Chọn file Excel (.xlsx)',
+        widget=forms.FileInput(attrs={'accept': '.xlsx'})
+    )
+
 class ImportDataForm(forms.Form):
     IMPORT_TYPE_CHOICES = (
         ('sales', 'Dữ liệu bán hàng (SalesData)'),

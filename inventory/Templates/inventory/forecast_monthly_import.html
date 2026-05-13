@@ -1,0 +1,236 @@
+{% extends "inventory/base.html" %}
+{% block extra_styles %}
+<style>
+.upload-note { margin-top: 10px; color: #5a7184; font-size: 14px; line-height: 1.6; }
+.forecast-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 15px;
+  margin: 14px 0 18px;
+}
+.forecast-metric {
+  position: relative;
+  overflow: hidden;
+  min-height: 110px;
+  padding: 20px 25px 16px;
+  border-radius: 20px;
+  border: 0;
+  background: linear-gradient(135deg, #5599a3 0%, #6aaeb8 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.forecast-metric::after {
+  content: '';
+  position: absolute;
+  top: -16px;
+  right: -12px;
+  width: 70px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+}
+.forecast-metric h3 {
+  margin: 0 0 20px;
+  font-size: 15px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.96);
+}
+.forecast-metric p {
+  margin: 0;
+  font-size: 31px;
+  line-height: 1;
+  font-weight: 800;
+  color: #fff;
+}
+.forecast-metric.highlight {
+  background: linear-gradient(135deg, #b84949 0%, #e16d6d 100%);
+}
+.forecast-metric.highlight p {
+  color: #fff;
+}
+.forecast-metric.highlight::after {
+  background: rgba(255, 255, 255, 0.14);
+}
+.section-spacer { margin-top: 24px; }
+.history-table td, .history-table th {
+  white-space: nowrap;
+  font-size: 14px;
+}
+.horizontal-table td, .horizontal-table th { text-align: center; }
+.history-table .row-label,
+.forecast-table .row-label {
+  background: #fff;
+  color: #1f3442;
+  font-weight: 800;
+}
+.history-table th,
+.history-table td,
+.forecast-table th,
+.forecast-table td {
+  background: #fff;
+  color: #1f3442;
+}
+.history-table thead th,
+.forecast-table thead th {
+  background: #fff;
+  color: #1f3442;
+}
+.history-table tbody td,
+.forecast-table tbody td {
+  background: #fff;
+}
+.history-table,
+.forecast-table {
+  background: #fff;
+}
+.history-table th,
+.history-table td,
+.forecast-table th,
+.forecast-table td {
+  font-size: 15px;
+}
+.btn-import {
+  background: linear-gradient(135deg, #4a8ba8 0%, #5fa5be 100%) !important;
+  color: #fff !important;
+  border: none !important;
+  padding: 12px 28px !important;
+  border-radius: 14px !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 12px rgba(74, 139, 168, 0.3) !important;
+  transition: all 0.3s ease !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.03em !important;
+}
+.btn-import:hover {
+  background: linear-gradient(135deg, #3d7a95 0%, #5295ad 100%) !important;
+  box-shadow: 0 6px 16px rgba(74, 139, 168, 0.4) !important;
+  transform: translateY(-2px) !important;
+}
+.btn-import:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 8px rgba(74, 139, 168, 0.3) !important;
+}
+input[type="file"]::file-selector-button {
+  background: linear-gradient(135deg, #e4eff5 0%, #92cde285 100%);
+  color: #394a53;
+  border: 2px dashed rgba(129, 71, 71, 0.411);
+  padding: 10px 24px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-right: 10px;
+}
+input[type="file"]::file-selector-button:active {
+  background: linear-gradient(135deg, #2d5a75 0%, #3d7a95 100%);
+}
+</style>
+{% endblock %}
+{% block content %}
+
+<div class="page-hero">
+  <div>
+    <h1 class="page-title">Dự báo</h1>
+  </div>
+</div>
+
+<div class="panel">
+  <form method="POST" enctype="multipart/form-data" class="control-form">
+    {% csrf_token %}
+    <input type="hidden" name="import_monthly_excel" value="1">
+    <div class="field">
+      <label>File Excel</label>
+      {{ form.file }}
+    </div>
+    <button type="submit" class="btn-import">Import dữ liệu</button>
+  </form>
+  <p class="upload-note">File cần có 2 cột: <strong>Tháng</strong> và <strong>Sản lượng sản xuất</strong>. Ví dụ: 01/2025, 399950.</p>
+  <p class="upload-note">Khi import, dữ liệu lịch sử tháng của planning sẽ được cập nhật và hiển thị ngay bên dưới.</p>
+  {% if result_message %}
+  <div class="success-message">{{ result_message }}</div>
+  {% endif %}
+  {% if error_message %}
+  <div class="error-message">{{ error_message }}</div>
+  {% endif %}
+</div>
+
+<div class="table-card section-spacer">
+  <div class="table-head">
+    <div>
+      <h2>Dữ liệu lịch sử đã import</h2>
+    </div>
+  </div>
+  <div class="table-scroll">
+    <table class="history-table horizontal-table">
+      <tr>
+        <th>Tháng</th>
+        {% for row in history_rows %}
+        <td>{{ row.month }}</td>
+        {% empty %}
+        <td>Chưa có dữ liệu lịch sử.</td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <th>Sản lượng</th>
+        {% for row in history_rows %}
+        <td>{{ row.quantity|floatformat:0 }}</td>
+        {% empty %}
+        <td>Chưa có dữ liệu lịch sử.</td>
+        {% endfor %}
+      </tr>
+    </table>
+  </div>
+</div>
+
+<div class="table-card section-spacer">
+  <div class="table-head">
+    <div>
+      <h2>Dự báo 8 tháng tới</h2>
+      <p>Kết quả dự báo tổng dựa trên chuỗi dữ liệu sản xuất đã import.</p>
+    </div>
+  </div>
+  {% if forecast_result %}
+  <div class="forecast-metrics">
+    <div class="forecast-metric"><h3>Trung bình</h3><p>{{ forecast_result.mean|floatformat:2 }}</p></div>
+    <div class="forecast-metric"><h3>Độ lệch chuẩn</h3><p>{{ forecast_result.std|floatformat:2 }}</p></div>
+    <div class="forecast-metric"><h3>MAE</h3><p>{{ forecast_result.mae|floatformat:2 }}</p></div>
+    <div class="forecast-metric"><h3>RMSE</h3><p>{{ forecast_result.rmse|floatformat:2 }}</p></div>
+    <div class="forecast-metric highlight"><h3>MAPE</h3><p>{{ forecast_result.mape|floatformat:2 }}%</p></div>
+  </div>
+  {% endif %}
+  <div class="table-scroll">
+    <table>
+      <tr>
+        <th>Chỉ số</th>
+        {% for row in forecast_8_rows %}
+        <th>{{ row.month }}</th>
+        {% empty %}
+        <th>Tháng 1</th>
+        <th>Tháng 2</th>
+        <th>Tháng 3</th>
+        <th>Tháng 4</th>
+        <th>Tháng 5</th>
+        <th>Tháng 6</th>
+        <th>Tháng 7</th>
+        <th>Tháng 8</th>
+        {% endfor %}
+      </tr>
+      <tr>
+        <th>Sản lượng dự báo</th>
+        {% for row in forecast_8_rows %}
+        <td>{{ row.quantity|floatformat:2 }}</td>
+        {% empty %}
+        <td colspan="8" class="empty-state">Chưa có dữ liệu dự báo tháng.</td>
+        {% endfor %}
+      </tr>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

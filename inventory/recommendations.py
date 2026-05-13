@@ -96,14 +96,14 @@ def generate_recommendation(item):
     return decision
 
 
-def build_inventory_alert_recommendations():
+def build_inventory_alert_recommendations(source='operations'):
     """
     Build a shared alert-oriented material list.
 
     This follows the alert page logic (ip < rop) and maps the resulting
     materials directly to ABC-based urgency tiers.
     """
-    demand_stats = aggregate_material_demand()
+    demand_stats = aggregate_material_demand(source=source)
 
     materials = list(Material.objects.all())
     abc_input = [
@@ -204,13 +204,13 @@ def build_inventory_alert_recommendations():
     return alerts, summary
 
 
-def build_inventory_watchlist_recommendations():
+def build_inventory_watchlist_recommendations(source='operations'):
     """
     Build a watchlist of materials in stable status that are approaching ROP threshold.
     
     Watchlist condition: ROP < IP <= ROP * 1.1 (stable, recently recovered from low stock)
     """
-    demand_stats = aggregate_material_demand()
+    demand_stats = aggregate_material_demand(source=source)
 
     materials = list(Material.objects.all())
     abc_input = [
@@ -302,8 +302,8 @@ def build_inventory_watchlist_recommendations():
     return watchlist
 
 
-def build_dashboard_recommendations(limit=8):
-    alerts, summary = build_inventory_alert_recommendations()
+def build_dashboard_recommendations(limit=8, source='operations'):
+    alerts, summary = build_inventory_alert_recommendations(source=source)
     items = []
 
     for alert in alerts:

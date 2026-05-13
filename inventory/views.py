@@ -5,8 +5,8 @@ from django.http import JsonResponse, HttpResponse
 from django.db.models import Sum
 from openpyxl import Workbook, load_workbook
 from .models import Product, Material, SalesData, Transaction, BOM
-from .forms import ImportDataForm
-from .services import aggregate_material_demand, abc_classification, forecast_product, forecast_product_monthly, run_dss
+from .forms import ImportDataForm, MonthlyForecastImportForm
+from .services import aggregate_material_demand, abc_classification, forecast_monthly_total, forecast_product, forecast_product_monthly, run_dss
 from .recommendations import build_dashboard_recommendations, build_inventory_alert_recommendations, build_inventory_watchlist_recommendations
 from datetime import datetime, timedelta, date
 from .permissions import (
@@ -149,7 +149,8 @@ def dashboard(request):
                 SalesData.objects.create(
                     product_id=product_id,
                     quantity=quantity,
-                    date=date_input
+                    date=date_input,
+                    source=SalesData.SOURCE_OPERATIONS,
                 )
 
         # ===== ADD TRANSACTION =====
@@ -196,15 +197,16 @@ def dashboard(request):
     materials = Material.objects.all()
 
     # 👉 lấy mới nhất + ổn định thứ tự
-    sales_list = SalesData.objects.all().order_by('-date', '-id')[:10]
-    transaction_list = Transaction.objects.all().order_by('-id')[:10]
+    sales_qs = SalesData.objects.filter(source=SalesData.SOURCE_OPERATIONS)
+    sales_list = sales_qs.order_by('-date', '-id')[:10]
+    transaction_list = Transaction.objects.filter(source=Transaction.SOURCE_OPERATIONS).order_by('-id')[:10]
 
     # =========================
     # TOP 5 PRODUCTS BY REVENUE (unit_price derived from BOM materials)
     # revenue = unit_price * total_quantity_sold
     # =========================
     sales_totals = {}
-    for sale in SalesData.objects.select_related('product').all():
+    for sale in sales_qs.select_related('product').all():
         product_id = sale.product_id
         product_name = sale.product.name if sale.product else str(product_id)
         bucket = sales_totals.setdefault(
@@ -265,7 +267,7 @@ def dashboard(request):
     }
 
     # 👉 Gợi ý ngày nhập gần nhất
-    last_sale = SalesData.objects.order_by('-date').first()
+    last_sale = sales_qs.order_by('-date').first()
 
     if last_sale:
         min_date = last_sale.date.strftime("%Y-%m-%d")
@@ -278,7 +280,7 @@ def dashboard(request):
     # ABC VALUE SUMMARY (TRANSACTION OUT)
     # =========================
     demand_map = {}
-    for transaction in Transaction.objects.filter(transaction_type='OUT').select_related('material').all():
+    for transaction in Transaction.objects.filter(transaction_type='OUT', source=Transaction.SOURCE_OPERATIONS).select_related('material').all():
         demand_map[transaction.material_id] = demand_map.get(transaction.material_id, 0) + float(transaction.quantity or 0)
 
     abc_material_list = []
@@ -319,7 +321,7 @@ def dashboard(request):
     selected_action = request.GET.get('action', 'ALL').upper()
 
     try:
-        recommendations_all, recommendation_summary = build_dashboard_recommendations(limit=200)
+        recommendations_all, recommendation_summary = build_dashboard_recommendations(limit=200, source=SalesData.SOURCE_OPERATIONS)
     except Exception:
         recommendations_all, recommendation_summary = [], {
             'urgent': 0,
@@ -470,6 +472,8 @@ def delete_transaction(request, id):
 # =========================
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def product_list(request):
+    from .models import SalesData
+    
     products = Product.objects.all()
 
     results = []
@@ -480,7 +484,8 @@ def product_list(request):
 
         if product_id:
             selected_product = Product.objects.get(id=product_id)
-            results = run_dss(product_id)
+            # Use OPERATIONS source data
+            results = run_dss(product_id, source=SalesData.SOURCE_OPERATIONS)
 
     return render(request, 'inventory/product_list.html', {
         'products': products,
@@ -520,8 +525,8 @@ def material_list(request):
 # =========================
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def alert(request):
-    alerts, summary = build_inventory_alert_recommendations()
-    watchlist = build_inventory_watchlist_recommendations()
+    alerts, summary = build_inventory_alert_recommendations(source=SalesData.SOURCE_OPERATIONS)
+    watchlist = build_inventory_watchlist_recommendations(source=SalesData.SOURCE_OPERATIONS)
 
     return render(request, 'inventory/alert.html', {
         "alerts": alerts,
@@ -544,12 +549,8 @@ def forecast(request):
     material_results = []
     forecast_7 = []
 
-    # Select data source for this view. By default we use all SalesData.
-    # If you want OPERATIONS to use a different input, set `sales_qs` to a
-    # filtered queryset, for example:
-    # sales_qs = SalesData.objects.filter(source='operations')
-    # The forecasting functions accept an optional `sales_qs` parameter.
-    sales_qs = None
+    # OPERATIONS forecast uses operations source only.
+    sales_qs = SalesData.objects.filter(source=SalesData.SOURCE_OPERATIONS)
 
     # =========================
     # PRODUCT FORECAST
@@ -749,184 +750,118 @@ def forecast(request):
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def forecast_monthly(request):
-    from .models import Product, BOM
     from collections import defaultdict
-    import math
+    from django.utils import timezone
+    from .models import MonthlyProductionData
 
-    products = Product.objects.all()
+    form = MonthlyForecastImportForm()
+    result_message = None
+    error_message = None
 
-    selected_product = None
-    product_result = None
-    material_results = []
-    forecast_8 = []
-
-    # Data source selection for monthly planning forecasts.
-    # Example to use a different dataset for PLANNING imports:
-    # sales_qs = SalesData.objects.filter(source='planning')
-    sales_qs = None
-
-    if request.method == 'POST':
-        product_id = request.POST.get('product_id')
-
-        if product_id:
-            selected_product = Product.objects.get(id=product_id)
-            mean, std, forecast_8, mae, rmse, mape = forecast_product_monthly(product_id, sales_qs=sales_qs)
-
-            mape_value = float(round(mape, 2))
-            if mape_value < 10:
-                mape_level = "good"
-                evaluation_class = "evaluation-good"
-                evaluation_icon = "fas fa-check"
-                evaluation_message = (
-                    "Mô hình có độ chính xác rất cao (MAPE < 10%). "
-                    "Kết quả dự báo rất đáng tin cậy."
-                )
-            elif mape_value < 20:
-                mape_level = "medium"
-                evaluation_class = "evaluation-medium"
-                evaluation_icon = "fas fa-info"
-                evaluation_message = (
-                    "Mô hình ở mức chấp nhận được (10% - 20%). "
-                    "Cần theo dõi thêm biến động thực tế."
-                )
-            else:
-                mape_level = "bad"
-                evaluation_class = "evaluation-bad"
-                evaluation_icon = "fas fa-exclamation-triangle"
-                evaluation_message = (
-                    "Độ sai số cao (MAPE > 20%). Nhu cầu sản phẩm này có biến động "
-                    "quá lớn, mô hình hiện tại không phù hợp."
-                )
-
-            product_result = {
-                "name": selected_product.name,
-                "mean": round(mean, 2),
-                "std": round(std, 2),
-                "forecast_8": [round(x, 2) for x in forecast_8],
-                "mae": round(mae, 2),
-                "rmse": round(rmse, 2),
-                "mape": mape_value,
-                "mape_level": mape_level,
-                "evaluation_class": evaluation_class,
-                "evaluation_icon": evaluation_icon,
-                "evaluation_message": evaluation_message,
-            }
-
-    # Aggregate materials similar to daily view but with 8-month vectors
-    material_dict = defaultdict(lambda: {
-        "material": "",
-        "material_id": "",
-        "mean": 0,
-        "variance": 0,
-        "forecast_8": [0] * 8
-    })
-
-    all_boms = BOM.objects.select_related('material', 'product')
-    product_forecasts = {}
-    if request.method == 'POST' and selected_product:
-        try:
-            if product_result is not None:
-                product_forecasts[selected_product.id] = (
-                    float(product_result.get('mean', 0) or 0),
-                    float(product_result.get('std', 0) or 0),
-                    [float(x or 0) for x in (forecast_8 or [0] * 8)],
-                )
-            else:
-                mean, std, product_forecast_8, _, _, _ = forecast_product_monthly(selected_product.id, sales_qs=sales_qs)
-                product_forecasts[selected_product.id] = (mean, std, product_forecast_8)
-
-            selected_material_ids = set(
-                BOM.objects.filter(product=selected_product).values_list('material_id', flat=True)
-            )
-
-            shared_product_ids = set()
-            if selected_material_ids:
-                shared_product_ids = set(
-                    BOM.objects.filter(material_id__in=selected_material_ids)
-                    .values_list('product_id', flat=True)
-                    .distinct()
-                )
-
-            for product_id in shared_product_ids:
-                if product_id in product_forecasts:
-                    continue
+    def _parse_month_value(raw_value):
+        if hasattr(raw_value, 'date') and callable(raw_value.date):
+            raw_value = raw_value.date()
+        if isinstance(raw_value, date):
+            return raw_value.replace(day=1)
+        if isinstance(raw_value, str):
+            text = raw_value.strip()
+            for fmt in ('%m/%Y', '%m-%Y', '%Y-%m', '%Y/%m'):
                 try:
-                    mean, std, product_forecast_8, _, _, _ = forecast_product_monthly(product_id, sales_qs=sales_qs)
-                    product_forecasts[product_id] = (mean, std, product_forecast_8)
-                except Exception as e:
-                    print(f"Monthly forecast error for shared product {product_id}: {e}")
-        except Exception as e:
-            print(f"Monthly forecast aggregation error: {e}")
+                    parsed = datetime.strptime(text, fmt)
+                    return parsed.date().replace(day=1)
+                except ValueError:
+                    continue
+        return None
 
-    selected_boms = []
-    shared_boms = []
-    if selected_product:
-        selected_boms = list(
-            BOM.objects.filter(product=selected_product).select_related('material')
-        )
-        selected_material_ids = set(bom.material_id for bom in selected_boms)
-        shared_boms = list(
-            BOM.objects.filter(material_id__in=selected_material_ids)
-            .exclude(product=selected_product)
-            .select_related('material', 'product')
-        )
-    else:
-        selected_material_ids = set()
+    if request.method == 'POST' and 'import_monthly_excel' in request.POST:
+        form = MonthlyForecastImportForm(request.POST, request.FILES)
+        if form.is_valid():
+            excel_file = request.FILES['file']
+            try:
+                wb = load_workbook(excel_file)
+                ws = wb.active
 
-    # dedupe quantities
-    selected_quantities = {}
-    selected_materials = {}
-    for bom in selected_boms:
-        if bom.material_id not in selected_quantities:
-            selected_quantities[bom.material_id] = bom.quantity_per_unit or 0
-            selected_materials[bom.material_id] = bom.material
+                rows_imported = 0
+                rows_skipped = 0
+                imported_rows = []
+                aggregated = {}
 
-    material_shared_boms = {}
-    for bom in shared_boms:
-        material_shared_boms.setdefault(bom.material_id, []).append(bom)
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    if not row or row[0] is None:
+                        continue
 
-    material_results = []
-    if selected_product:
-        selected_stats = product_forecasts.get(selected_product.id, (0.0, 0.0, [0] * 8))
-        selected_mean = float(selected_stats[0] or 0.0)
-        selected_std = float(selected_stats[1] or 0.0)
-        selected_forecast_8 = [float(x or 0.0) for x in selected_stats[2]]
+                    month_obj = _parse_month_value(row[0])
+                    try:
+                        quantity = float(str(row[1]).replace(',', '').strip())
+                    except Exception:
+                        continue
 
-        for material_id, quantity in selected_quantities.items():
-            material = selected_materials.get(material_id)
-            qty = float(quantity or 0)
-            material_mean = selected_mean * qty
-            material_variance = (selected_std * qty) ** 2
-            material_forecast_8 = [round(val * qty, 2) for val in selected_forecast_8]
+                    if not month_obj:
+                        continue
 
-            for bom in material_shared_boms.get(material_id, []):
-                other_stats = product_forecasts.get(bom.product_id, (0.0, 0.0, [0] * 8))
-                other_mean = float(other_stats[0] or 0.0)
-                other_std = float(other_stats[1] or 0.0)
-                other_forecast_8 = [float(x or 0.0) for x in other_stats[2]]
-                other_qty = float(bom.quantity_per_unit or 0)
+                    aggregated[month_obj] = aggregated.get(month_obj, 0) + quantity
 
-                material_mean += other_mean * other_qty
-                material_variance += (other_std * other_qty) ** 2
-                material_forecast_8 = [
-                    round(current + other_val * other_qty, 2)
-                    for current, other_val in zip(material_forecast_8, other_forecast_8)
-                ]
+                if aggregated:
+                    MonthlyProductionData.objects.filter(source=MonthlyProductionData.SOURCE_PLANNING).delete()
+                    for month_obj in sorted(aggregated.keys()):
+                        quantity = float(aggregated[month_obj])
+                        MonthlyProductionData.objects.create(
+                            month=month_obj,
+                            quantity=quantity,
+                            source=MonthlyProductionData.SOURCE_PLANNING,
+                        )
+                        imported_rows.append({
+                            'month': month_obj,
+                            'quantity': quantity,
+                        })
+                        rows_imported += 1
 
-            material_results.append({
-                "material": material.name,
-                "material_id": material.source_id or f"NVL{material.id}",
-                "mean": round(material_mean, 2),
-                "std": round(math.sqrt(material_variance), 2),
-                "forecast_8": material_forecast_8,
+                result_message = f'Đã import {rows_imported} dòng dữ liệu sản xuất quá khứ thành công.'
+                if rows_skipped:
+                    result_message += f' Bỏ qua {rows_skipped} dòng không hợp lệ.'
+            except Exception as e:
+                error_message = f'Lỗi xử lý file: {str(e)}'
+        else:
+            error_message = 'Vui lòng chọn file Excel hợp lệ.'
+
+    history_qs = MonthlyProductionData.objects.filter(source=MonthlyProductionData.SOURCE_PLANNING).order_by('month')
+    history_rows = [
+        {
+            'month': item.month.strftime('%m/%Y'),
+            'quantity': float(item.quantity or 0),
+        }
+        for item in history_qs
+    ]
+
+    forecast_mean, forecast_std, forecast_8, mae, rmse, mape = forecast_monthly_total(history_qs=history_qs)
+    forecast_result = None
+    if history_rows:
+        forecast_result = {
+            'mean': round(forecast_mean, 2),
+            'std': round(forecast_std, 2),
+            'forecast_8': [round(x, 2) for x in forecast_8],
+            'mae': round(mae, 2),
+            'rmse': round(rmse, 2),
+            'mape': round(mape, 2),
+        }
+
+    forecast_8_rows = []
+    if history_qs.exists():
+        last_month = history_qs.last().month
+        for idx, value in enumerate(forecast_8, start=1):
+            month_label = (last_month.replace(day=1) + timedelta(days=32 * idx)).replace(day=1)
+            forecast_8_rows.append({
+                'month': month_label.strftime('%m/%Y'),
+                'quantity': round(float(value or 0), 2),
             })
 
-    return render(request, 'inventory/forecast_monthly.html', {
-        'products': products,
-        'selected_product': selected_product,
-        'product_result': product_result,
-        'material_results': material_results,
-        'forecast_8': forecast_8,
+    return render(request, 'inventory/forecast_monthly_import.html', {
+        'form': form,
+        'result_message': result_message,
+        'error_message': error_message,
+        'history_rows': history_rows,
+        'forecast_result': forecast_result,
+        'forecast_8_rows': forecast_8_rows,
     })
 from .services import abc_classification, forecast_product
 from .models import Product, BOM
@@ -954,7 +889,7 @@ def abc_page(request):
     try:
         transaction_data = (
             Transaction.objects
-            .filter(transaction_type='OUT')
+            .filter(transaction_type='OUT', source=Transaction.SOURCE_OPERATIONS)
             .values('material')
             .annotate(total=Sum('quantity'))
         )
@@ -1039,6 +974,93 @@ def abc_page(request):
         "filtered_materials": filtered_materials,
         "abc_total": abc_total,
         "selected_abc": abc_filter
+    })
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def inventory_analysis(request):
+    from .models import Material, Transaction
+    from django.db.models import Sum, Q
+    
+    materials = Material.objects.all()
+    
+    # Get stock-out data (OPERATIONS source only)
+    try:
+        transaction_data = (
+            Transaction.objects
+            .filter(transaction_type='OUT', source=Transaction.SOURCE_OPERATIONS)
+            .values('material')
+            .annotate(total_out=Sum('quantity'))
+        )
+        stock_out_map = {
+            item['material']: item['total_out']
+            for item in transaction_data
+        }
+    except:
+        stock_out_map = {}
+    
+    # Build analysis data
+    analysis_data = []
+    
+    for material in materials:
+        total_out = stock_out_map.get(material.id, 0)
+        
+        # Determine status based on on_hand level
+        if material.on_hand <= 0:
+            status = 'out_of_stock'
+            status_label = 'Hết hàng'
+            status_color = 'danger'
+        elif material.on_hand < material.leadtime * 10:  # Simple threshold
+            status = 'low_stock'
+            status_label = 'Tồn kho thấp'
+            status_color = 'warning'
+        else:
+            status = 'normal'
+            status_label = 'Bình thường'
+            status_color = 'success'
+        
+        analysis_data.append({
+            'material_id': material.source_id or f'NVL{material.id}',
+            'material': material,
+            'on_hand': material.on_hand,
+            'on_order': material.on_order,
+            'total_demand': total_out,
+            'leadtime': material.leadtime,
+            'holding_cost': material.holding_cost,
+            'ordering_cost': material.ordering_cost,
+            'price': material.price_cost,
+            'value': material.on_hand * material.price_cost,
+            'status': status,
+            'status_label': status_label,
+            'status_color': status_color
+        })
+    
+    # Filter options
+    status_filter = request.GET.get('status', 'all')
+    if status_filter != 'all':
+        analysis_data = [item for item in analysis_data if item['status'] == status_filter]
+    
+    # Sort options
+    sort_by = request.GET.get('sort', 'material')
+    if sort_by == 'value':
+        analysis_data.sort(key=lambda x: x['value'], reverse=True)
+    elif sort_by == 'on_hand':
+        analysis_data.sort(key=lambda x: x['on_hand'], reverse=True)
+    elif sort_by == 'demand':
+        analysis_data.sort(key=lambda x: x['total_demand'], reverse=True)
+    else:
+        analysis_data.sort(key=lambda x: x['material'].name)
+    
+    # Calculate summary stats
+    total_inventory_value = sum(item['value'] for item in analysis_data)
+    total_on_hand = sum(item['on_hand'] for item in analysis_data)
+    
+    return render(request, 'inventory/inventory_analysis.html', {
+        'analysis_data': analysis_data,
+        'status_filter': status_filter,
+        'sort_by': sort_by,
+        'total_inventory_value': total_inventory_value,
+        'total_on_hand': total_on_hand,
     })
 
 
@@ -1134,7 +1156,7 @@ def access_control(request):
 # IMPORT DATA FROM EXCEL
 # =========================
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
-def import_data(request):
+def import_data(request, sales_source=SalesData.SOURCE_OPERATIONS):
     def _parse_excel_date(raw_value):
         if isinstance(raw_value, datetime):
             return raw_value.date()
@@ -1157,13 +1179,24 @@ def import_data(request):
             return 'OUT'
         return None
 
+    if sales_source not in dict(SalesData.SOURCE_CHOICES):
+        sales_source = SalesData.SOURCE_OPERATIONS
+
+    source_label = 'OPERATIONS' if sales_source == SalesData.SOURCE_OPERATIONS else 'PLANNING'
+    page_title = 'Import dữ liệu' if sales_source == SalesData.SOURCE_OPERATIONS else 'Import dữ liệu kế hoạch'
+    page_subtitle = (
+        'Nhập dữ liệu bán hàng hoặc giao dịch cho OPERATIONS'
+        if sales_source == SalesData.SOURCE_OPERATIONS
+        else 'Nhập dữ liệu bán hàng cho PLANNING'
+    )
+
     form = ImportDataForm()
     result_message = None
     error_message = None
     products = Product.objects.all()
     materials = Material.objects.all()
 
-    last_sale = SalesData.objects.order_by('-date').first()
+    last_sale = SalesData.objects.filter(source=sales_source).order_by('-date').first()
     min_date = last_sale.date.strftime("%Y-%m-%d") if last_sale else None
     today = date.today().strftime("%Y-%m-%d")
 
@@ -1188,6 +1221,7 @@ def import_data(request):
                     product_id=product_id,
                     quantity=quantity,
                     date=date_input,
+                    source=sales_source,
                 ).exists()
 
                 if is_duplicate:
@@ -1196,9 +1230,10 @@ def import_data(request):
                     SalesData.objects.create(
                         product_id=product_id,
                         quantity=quantity,
-                        date=date_input
+                        date=date_input,
+                        source=sales_source,
                     )
-                    result_message = 'Đã thêm doanh số thành công.'
+                    result_message = f'Đã thêm doanh số thành công cho {source_label}.'
             else:
                 error_message = 'Dữ liệu nhập doanh số không hợp lệ.'
 
@@ -1281,6 +1316,7 @@ def import_data(request):
                                         product=product,
                                         date=date_obj,
                                         quantity=quantity,
+                                        source=sales_source,
                                     ).exists()
 
                                     if is_duplicate:
@@ -1289,18 +1325,34 @@ def import_data(request):
                                         SalesData.objects.create(
                                             product=product,
                                             date=date_obj,
-                                            quantity=quantity
+                                            quantity=quantity,
+                                            source=sales_source,
                                         )
                                         rows_imported += 1
                             except Exception:
                                 continue
 
                         result_message = (
-                            f'✓ Đã import {rows_imported} bản ghi bán hàng thành công. '
+                            f'✓ Đã import {rows_imported} bản ghi bán hàng ({source_label}) thành công. '
                             f'Bỏ qua {rows_skipped_duplicate} bản ghi trùng hoàn toàn.'
                         )
 
                     elif import_type == 'transaction':
+                        if sales_source != SalesData.SOURCE_OPERATIONS:
+                            error_message = 'Nguồn PLANNING không dùng dữ liệu giao dịch kho.'
+                            return render(request, 'inventory/import_data.html', {
+                                'form': form,
+                                'result_message': result_message,
+                                'error_message': error_message,
+                                'products': products,
+                                'materials': materials,
+                                'min_date': min_date,
+                                'today': today,
+                                'sales_source_label': source_label,
+                                'page_title': page_title,
+                                'page_subtitle': page_subtitle,
+                            })
+
                         # Expected columns: material_name, quantity, transaction_type, date
                         rows_imported = 0
                         rows_skipped_duplicate = 0
@@ -1358,7 +1410,15 @@ def import_data(request):
         'materials': materials,
         'min_date': min_date,
         'today': today,
+        'sales_source_label': source_label,
+        'page_title': page_title,
+        'page_subtitle': page_subtitle,
     })
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def import_data_planning(request):
+    return import_data(request, sales_source=SalesData.SOURCE_PLANNING)
 
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
