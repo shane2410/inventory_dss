@@ -163,3 +163,28 @@ class MonthlyProductionData(models.Model):
 
     def __str__(self):
         return f"{self.month:%m/%Y} - {self.quantity} ({self.source})"
+
+
+class PlanningConfiguration(models.Model):
+    """Lưu các input parameters cho kế hoạch tổng hợp"""
+    opening_inventory = models.FloatField(default=0)
+    workers = models.IntegerField(default=50)
+    productivity = models.FloatField(default=150)
+    regular_cost = models.FloatField(default=0)
+    overtime_cost = models.FloatField(default=0)
+    subcontract_cost = models.FloatField(default=0)
+    inventory_cost = models.FloatField(default=0)
+    backorder_cost = models.FloatField(default=0)
+    ot_limit_pct = models.FloatField(default=20)
+    inventory_policy = models.FloatField(default=0)
+    current_workers = models.IntegerField(default=50)
+    hire_cost = models.FloatField(default=0)
+    layoff_cost = models.FloatField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "Planning Configurations"
+
+    def __str__(self):
+        return f"Planning Config - {self.updated_at:%Y-%m-%d %H:%M}"

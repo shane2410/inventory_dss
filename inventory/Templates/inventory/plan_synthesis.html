@@ -1,0 +1,623 @@
+{% extends "inventory/base.html" %}
+{% load humanize %}
+{% block extra_styles %}
+<style>
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+}
+.plan-hero {
+  grid-column: 1 / -1;
+  padding: 22px 24px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #173b4d 0%, #2d6178 52%, #4e8ca1 100%);
+  color: #fff;
+  box-shadow: 0 16px 36px rgba(16, 33, 45, 0.16);
+}
+.plan-hero h1 {
+  margin: 0 0 8px;
+  font-size: 30px;
+  line-height: 1.1;
+}
+.plan-hero p {
+  margin: 0;
+  max-width: 980px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.7;
+}
+.plan-panel {
+  grid-column: span 12;
+  padding: 18px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(17, 39, 52, 0.08);
+}
+.plan-section-title {
+  margin: 0 0 12px;
+  font-size: 18px;
+  color: #173b4d;
+}
+.plan-help {
+  margin: 8px 0 0;
+  color: #5c7280;
+  line-height: 1.6;
+}
+.plan-form {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+.plan-field {
+  grid-column: auto;
+  max-width: none;
+}
+.plan-field.full { grid-column: 1 / -1; }
+.plan-field.note input {
+  font-size: 12px;
+}
+.plan-field label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 700;
+  color: #294655;
+  font-size: 13px;
+}
+.plan-field input,
+.plan-field select {
+  width: 100%;
+  border: 1px solid #d7e3ea;
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 13px;
+  background: #fbfdfe;
+  color: #173b4d;
+}
+.workforce-adjustment-input {
+  width: 100%;
+  min-width: 90px;
+  border: 1px solid #c9d8df;
+  border-radius: 8px;
+  padding: 6px 8px;
+  text-align: center;
+  font-size: 13px;
+  background: #fff;
+  color: #173b4d;
+}
+.plan-field input:focus,
+.plan-field select:focus {
+  outline: none;
+  border-color: #4e8ca1;
+  box-shadow: 0 0 0 3px rgba(78, 140, 161, 0.14);
+}
+.plan-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.btn-plan {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 22px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(135deg, #2d6178 0%, #4e8ca1 100%);
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 10px 18px rgba(45, 97, 120, 0.2);
+}
+.btn-plan.secondary {
+  background: #eef5f8;
+  color: #274353;
+  box-shadow: none;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.summary-card {
+  padding: 18px 18px 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fbfdfe 0%, #f3f8fb 100%);
+  border: 1px solid #dce8ee;
+}
+.summary-card .label {
+  display: block;
+  margin-bottom: 10px;
+  color: #5b7280;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.summary-card .value {
+  font-size: 28px;
+  font-weight: 800;
+  color: #173b4d;
+}
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.info-card {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: #f8fbfc;
+  border: 1px solid #d9e6ec;
+}
+.info-card h3 {
+  margin: 0 0 8px;
+  color: #173b4d;
+  font-size: 16px;
+}
+.info-card p,
+.info-card li {
+  margin: 0;
+  color: #4f6673;
+  line-height: 1.65;
+}
+.info-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.plan-table tbody th:first-child {
+  width: 160px;
+  min-width: 160px;
+  max-width: 160px;
+}
+.plan-table tbody th {
+  text-align: center;
+  padding: 7px 8px;
+}
+.plan-table tbody tr.metric-row th {
+  text-align: left;
+}
+.plan-table tbody tr.category-row {
+  background: #e8f1f6;
+  font-weight: 700;
+  color: #173b4d;
+  border-bottom: 2px solid #cde3ed;
+  text-align: left;
+}
+.plan-table tbody tr.category-row th,
+.plan-table tbody tr.category-row td {
+  text-align: left;
+  padding: 7px 8px;
+}
+.plan-table tbody tr.subgroup-row th,
+.plan-table tbody tr.item-row th {
+  padding-left: 30px;
+  text-align: left;
+}
+.plan-table tbody tr.item-row.sub-item-row th {
+  padding-left: 55px;
+  text-align: left;
+}
+.plan-table tbody tr {
+  border-bottom: 1px solid #e5ecf0;
+}
+.plan-table tbody tr:hover {
+  background: #f9fbfd;
+}
+.plan-table tbody td {
+  padding: 7px 8px;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+.plan-table th,
+.plan-table td {
+  white-space: nowrap;
+  font-size: 14px;
+}
+.plan-table thead th {
+  background: #173b4d;
+  color: #fff;
+}
+.plan-table tbody th {
+  background: #f6fafc;
+  color: #173b4d;
+  font-weight: 700;
+  padding: 7px 8px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.badge.ok { background: #e8f6ee; color: #1e7444; }
+.badge.warn { background: #fff0db; color: #9b5b00; }
+@media (max-width: 1100px) {
+  .summary-grid,
+  .info-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plan-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plan-field.full { grid-column: 1 / -1; }
+}
+@media (max-width: 720px) {
+  .summary-grid,
+  .info-grid { grid-column: 1 / -1; grid-template-columns: 1fr; }
+  .plan-form { grid-template-columns: 1fr; }
+  .plan-field.full { grid-column: auto; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="plan-grid">
+  <div class="plan-hero">
+    <h1>Kế hoạch tổng hợp</h1>
+    <p>Trang này lấy 8 tháng dự báo tổng từ dữ liệu Planning, sau đó cân đối theo công thức aggregate planning: <strong>tồn cuối = tồn đầu + sản lượng - dự báo</strong>, <strong>tồn bình quân = (đầu kỳ + cuối kỳ) / 2</strong>. Constraint được hiểu là giới hạn overtime và mức tồn kho mục tiêu.</p>
+  </div>
+
+  {% if feasibility_message %}
+  <div class="plan-panel" style="grid-column: 1 / -1; border: 1px solid #f2b8b5; background: #fff5f5; color: #9b1c1c;">
+    <strong>{{ feasibility_message }}</strong>
+  </div>
+  {% endif %}
+
+  <div class="plan-panel">
+    <h2 class="plan-section-title">Thông số đầu vào</h2>
+    <form method="post" class="plan-form">
+      {% csrf_token %}
+      <div class="plan-field">
+        <label>Tồn đầu kỳ</label>
+        <input type="number" step="0.01" name="opening_inventory" value="{{ opening_inventory|stringformat:'g' }}">
+      </div>
+      <div class="plan-field">
+        <label>Workers khởi đầu</label>
+        <input type="number" step="1" name="workers" value="{{ workers|stringformat:'d' }}">
+      </div>
+      <div class="plan-field">
+        <label>Productivity / worker</label>
+        <input type="number" step="0.01" name="productivity" value="{{ productivity|stringformat:'g' }}">
+      </div>
+      <div class="plan-field">
+        <label>OT limit (%)</label>
+        <input type="number" step="0.01" name="ot_limit_pct" value="{{ ot_limit_pct|stringformat:'g' }}">
+      </div>
+      <div class="plan-field">
+        <label>Inventory policy</label>
+        <input type="number" step="0.01" name="inventory_policy" value="{{ inventory_policy|stringformat:'g' }}">
+      </div>
+      <div class="plan-field">
+        <label>Regular cost / unit</label>
+        <input type="number" step="0.01" name="regular_cost" value="{{ regular_cost|stringformat:'g' }}">
+      </div>
+      <div class="plan-field">
+        <label>Overtime cost / unit</label>
+        <input type="number" step="0.01" name="overtime_cost" value="{{ overtime_cost|stringformat:'g' }}">
+      </div>
+      <div class="plan-field">
+        <label>Subcontract cost / unit</label>
+        <input type="number" step="0.01" name="subcontract_cost" value="{{ subcontract_cost|stringformat:'g' }}">
+      </div>
+      <div class="plan-field">
+        <label>Inventory cost / unit</label>
+        <input type="number" step="0.01" name="inventory_cost" value="{{ inventory_cost|stringformat:'g' }}">
+      </div>
+      <div class="plan-field">
+        <label>Backorder cost / unit</label>
+        <input type="number" step="0.01" name="backorder_cost" value="{{ backorder_cost|stringformat:'g' }}">
+      </div>
+      <div class="plan-field">
+        <label>Hire cost / worker</label>
+        <input type="number" step="0.01" name="hire_cost" value="{{ hire_cost|stringformat:'g' }}">
+      </div>
+      <div class="plan-field">
+        <label>Layoff cost / worker</label>
+        <input type="number" step="0.01" name="layoff_cost" value="{{ layoff_cost|stringformat:'g' }}">
+      </div>
+      <div class="plan-field note">
+        <label>Ghi chú Constraint</label>
+        <input type="text" value="OT limit = OT_t <= alpha x regular capacity; Inventory policy = I_t <= I_max; dòng Tuyển dụng/Sa thải trong bảng được nhập dấu +/- theo từng tháng." readonly>
+      </div>
+      <div class="plan-field full">
+        <div class="plan-actions">
+          <button type="submit" class="btn-plan">Tính kế hoạch</button>
+          <button type="button" class="btn-plan secondary" id="btn-save">Lưu</button>
+        </div>
+      </div>
+    </form>
+    <p class="plan-help">{% if forecast_rows %}Nguồn forecast hiện tại được lấy từ {{ forecast_rows|length }} tháng dự báo tổng gần nhất của Planning.{% endif %}</p>
+  </div>
+
+  <div class="plan-panel">
+    <h2 class="plan-section-title">Tóm tắt</h2>
+    <div class="summary-grid">
+      {% for card in summary_cards %}
+      <div class="summary-card">
+        <span class="label">{{ card.label }}</span>
+        <div class="value">{{ card.value|floatformat:2 }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="info-grid" style="margin-top:14px;">
+      <div class="info-card">
+        <h3>Năng lực hiện tại</h3>
+        <p>Workers khởi đầu: {{ workers }}.</p>
+        <p>Regular capacity tháng đầu: {{ plan_rows.0.regular_capacity|floatformat:2 }} units/tháng.</p>
+        <p>OT capacity tháng đầu: {{ plan_rows.0.overtime_capacity|floatformat:2 }} units/tháng.</p>
+      </div>
+      <div class="info-card">
+        <h3>Constraint</h3>
+        <p>{{ forecast_note }}</p>
+      </div>
+      <div class="info-card">
+        <h3>Workforce setup</h3>
+        <p>Thay đổi workforce tích lũy: {{ workforce_total_change }} worker(s).</p>
+        <p>Workforce cuối kỳ: {{ workforce_end|floatformat:0 }} worker(s).</p>
+        <p>Chi phí thay đổi workforce: {{ workforce_cost|floatformat:2 }}.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="plan-panel">
+    <h2 class="plan-section-title">Kế hoạch tổng hợp</h2>
+    <form method="post">
+      {% csrf_token %}
+      <div class="table-wrap">
+        <table class="plan-table">
+          <thead>
+            <tr>
+              <th>Chỉ số</th>
+              {% for row in forecast_rows %}
+              <th>{{ row.month }}</th>
+              {% endfor %}
+              <th>Cộng</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for metric in planning_metrics %}
+              {% if metric.is_group %}
+                <tr class="category-row">
+                  <th colspan="10">{{ metric.label }}</th>
+                </tr>
+                {% for item in metric.items %}
+                  {% if item.is_subgroup %}
+                    <tr class="subgroup-row">
+                      <th colspan="10">{{ item.label }}</th>
+                    </tr>
+                    {% for subitem in item.items %}
+                      <tr class="item-row sub-item-row">
+                        <th>{{ subitem.label }}</th>
+                        {% for value in subitem.values %}
+                          {% if subitem.editable %}
+                            <td>
+                              <input
+                                class="workforce-adjustment-input"
+                                type="number"
+                                step="1"
+                                name="workforce_adjustment_{{ forloop.counter }}"
+                                value="{{ value }}"
+                              >
+                            </td>
+                          {% elif subitem.integer_values %}
+                            <td>{{ value|intcomma }}</td>
+                          {% else %}
+                            <td>{{ value|floatformat:0|intcomma }}</td>
+                          {% endif %}
+                        {% endfor %}
+                        <td>{% if subitem.total is not None %}<strong>{% if subitem.editable %}{{ subitem.total }}{% elif subitem.integer_values %}{{ subitem.total|intcomma }}{% else %}{{ subitem.total|floatformat:0|intcomma }}{% endif %}</strong>{% else %}-{% endif %}</td>
+                      </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr class="item-row">
+                      <th>{{ item.label }}</th>
+                      {% for value in item.values %}
+                        {% if item.integer_values %}
+                          <td>{{ value|intcomma }}</td>
+                        {% else %}
+                          <td>{{ value|floatformat:0|intcomma }}</td>
+                        {% endif %}
+                      {% endfor %}
+                      <td>{% if item.total is not None %}<strong>{% if item.integer_values %}{{ item.total|intcomma }}{% else %}{{ item.total|floatformat:0|intcomma }}{% endif %}</strong>{% else %}-{% endif %}</td>
+                    </tr>
+                  {% endif %}
+                {% endfor %}
+              {% else %}
+                <tr class="metric-row">
+                  <th>{{ metric.label }}</th>
+                  {% for value in metric.values %}
+                    {% if metric.integer_values %}
+                      <td>{{ value|intcomma }}</td>
+                    {% else %}
+                      <td>{{ value|floatformat:0|intcomma }}</td>
+                    {% endif %}
+                  {% endfor %}
+                  <td>{% if metric.total is not None %}<strong>{% if metric.integer_values %}{{ metric.total|intcomma }}{% else %}{{ metric.total|floatformat:0|intcomma }}{% endif %}</strong>{% else %}-{% endif %}</td>
+                </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="plan-actions" style="margin-top:14px;">
+        <button type="submit" class="btn-plan">Tính lại từ bảng</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Convert locale number format (comma separator) to standard format (dot separator) before submit
+document.querySelectorAll('form[method="post"]').forEach(form => {
+  form.addEventListener('submit', function(e) {
+    // Convert all number inputs from locale format (comma) to standard format (dot)
+    form.querySelectorAll('input[type="number"]').forEach(input => {
+      if (input.value) {
+        input.value = input.value.toString().replace(',', '.');
+      }
+    });
+  });
+});
+
+document.getElementById('btn-save').addEventListener('click', function() {
+  const form = document.querySelector('form[method="post"]');
+  const formData = new FormData(form);
+  const data = Object.fromEntries(formData.entries());
+  
+  // Check if data was previously saved
+  const lastSavedData = JSON.parse(localStorage.getItem('planningConfig')) || {};
+  const isUpdate = Object.keys(lastSavedData).length > 0;
+  
+  // If updating, ask confirmation
+  if (isUpdate) {
+    const confirmMsg = 'Dữ liệu kế hoạch đã lưu trước đó. Bạn có muốn lưu dữ liệu tính toán mới này không?';
+    if (!confirm(confirmMsg)) return;
+  }
+  
+  // Send POST request to save
+  fetch('{% url "save-planning-config" %}', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+    },
+    body: JSON.stringify(data),
+  })
+  .then(response => response.json())
+  .then(result => {
+    if (result.success) {
+      // Save to localStorage for next time
+      localStorage.setItem('planningConfig', JSON.stringify(data));
+      alert(result.message);
+      form.requestSubmit();
+    } else {
+      alert('Lỗi: ' + result.error);
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Có lỗi xảy ra khi lưu dữ liệu');
+  });
+});
+
+// Load saved data on page load
+window.addEventListener('load', function() {
+  const savedData = JSON.parse(localStorage.getItem('planningConfig'));
+  if (savedData) {
+    Object.keys(savedData).forEach(key => {
+      const input = document.querySelector(`[name="${key}"]`);
+      if (input) input.value = savedData[key];
+    });
+  }
+  syncPlanForms();
+});
+function syncPlanForms() {
+  const forms = document.querySelectorAll('form[method="post"]');
+  const inputForm = document.querySelector('.plan-form');
+  const tableForm = forms.length > 1 ? forms[1] : null;
+  if (!inputForm || !tableForm) {
+    return;
+  }
+
+  const topFields = ['opening_inventory', 'workers', 'productivity', 'ot_limit_pct', 'inventory_policy', 'regular_cost', 'overtime_cost', 'subcontract_cost', 'inventory_cost', 'backorder_cost', 'hire_cost', 'layoff_cost'];
+  const adjustmentInputs = Array.from(document.querySelectorAll('[name^="workforce_adjustment_"]'));
+
+  let inputHiddenWrap = document.getElementById('input-form-sync-hidden');
+  if (!inputHiddenWrap) {
+    inputHiddenWrap = document.createElement('div');
+    inputHiddenWrap.id = 'input-form-sync-hidden';
+    inputHiddenWrap.style.display = 'none';
+    inputForm.appendChild(inputHiddenWrap);
+  }
+  inputHiddenWrap.innerHTML = '';
+
+  adjustmentInputs.forEach((sourceInput) => {
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = sourceInput.name;
+    hiddenInput.value = sourceInput.value;
+    inputHiddenWrap.appendChild(hiddenInput);
+    sourceInput.addEventListener('input', () => {
+      hiddenInput.value = sourceInput.value;
+    });
+  });
+
+  let tableHiddenWrap = document.getElementById('table-form-sync-hidden');
+  if (!tableHiddenWrap) {
+    tableHiddenWrap = document.createElement('div');
+    tableHiddenWrap.id = 'table-form-sync-hidden';
+    tableHiddenWrap.style.display = 'none';
+    tableForm.appendChild(tableHiddenWrap);
+  }
+  tableHiddenWrap.innerHTML = '';
+
+  topFields.forEach((fieldName) => {
+    const sourceInput = inputForm.querySelector(`[name="${fieldName}"]`);
+    if (!sourceInput) {
+      return;
+    }
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.name = fieldName;
+    hiddenInput.value = sourceInput.value;
+    tableHiddenWrap.appendChild(hiddenInput);
+    sourceInput.addEventListener('input', () => {
+      hiddenInput.value = sourceInput.value;
+    });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', syncPlanForms);
+
+document.getElementById('btn-save').addEventListener('click', function() {
+  const form = document.querySelector('form[method="post"]');
+  const formData = new FormData(form);
+  const data = Object.fromEntries(formData.entries());
+  
+  // Check if data was previously saved
+  const lastSavedData = JSON.parse(localStorage.getItem('planningConfig')) || {};
+  const isUpdate = Object.keys(lastSavedData).length > 0;
+  
+  // If updating, ask confirmation
+  if (isUpdate) {
+    const confirmMsg = 'Dữ liệu kế hoạch đã lưu trước đó. Bạn có muốn lưu dữ liệu tính toán mới này không?';
+    if (!confirm(confirmMsg)) return;
+  }
+  
+  // Send POST request to save
+  fetch('{% url "save-planning-config" %}', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+    },
+    body: JSON.stringify(data),
+  })
+  .then(response => response.json())
+  .then(result => {
+    if (result.success) {
+      // Save to localStorage for next time
+      localStorage.setItem('planningConfig', JSON.stringify(data));
+      alert(result.message);
+    } else {
+      alert('Lỗi: ' + result.error);
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Có lỗi xảy ra khi lưu dữ liệu');
+  });
+});
+
+// Load saved data on page load
+window.addEventListener('load', function() {
+  const savedData = JSON.parse(localStorage.getItem('planningConfig'));
+  if (savedData) {
+    Object.keys(savedData).forEach(key => {
+      const input = document.querySelector(`[name="${key}"]`);
+      if (input) input.value = savedData[key];
+    });
+  }
+  syncPlanForms();
+});
+</script>
+{% endblock %}

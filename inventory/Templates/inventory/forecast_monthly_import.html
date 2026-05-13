@@ -152,6 +152,9 @@ input[type="file"]::file-selector-button:active {
   </form>
   <p class="upload-note">File cần có 2 cột: <strong>Tháng</strong> và <strong>Sản lượng sản xuất</strong>. Ví dụ: 01/2025, 399950.</p>
   <p class="upload-note">Khi import, dữ liệu lịch sử tháng của planning sẽ được cập nhật và hiển thị ngay bên dưới.</p>
+  <p class="upload-note">
+    <a href="{% url 'plan-synthesis' %}" class="btn-import" style="display:inline-flex; text-decoration:none;">Mở Kế hoạch tổng hợp</a>
+  </p>
   {% if result_message %}
   <div class="success-message">{{ result_message }}</div>
   {% endif %}

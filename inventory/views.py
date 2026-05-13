@@ -3,6 +3,8 @@ from functools import wraps
 from django.contrib.auth import authenticate, login, logout, get_user_model
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Sum
+import math
+import numpy as np
 from openpyxl import Workbook, load_workbook
 from .models import Product, Material, SalesData, Transaction, BOM
 from .forms import ImportDataForm, MonthlyForecastImportForm
@@ -25,12 +27,857 @@ from .permissions import (
 )
 
 
+def allocate_overtime(shortage, regular, alpha_percent=20):
+    """
+    Phân bổ tăng ca (OT) tập trung vào giữa shortage window
+
+    Parameters:
+    - shortage: list[int/float]  (thiếu hàng theo tháng)
+    - regular:  list[int/float]  (sản lượng giờ thường)
+    - alpha_percent: int/float   (% OT max, ví dụ 20)
+
+    Returns:
+    - OT: list[float] (tăng ca từng tháng)
+    """
+
+    # ===== 1. Validate input =====
+    if len(shortage) != len(regular):
+        raise ValueError("shortage và regular phải cùng độ dài")
+
+    if alpha_percent < 0 or alpha_percent > 50:
+        raise ValueError("alpha nên nằm trong khoảng 0–50 (%)")
+
+    alpha = alpha_percent / 100
+    n = len(shortage)
+    OT = np.zeros(n)
+
+    # ===== 2. Xác định shortage window =====
+    shortage_indices = [i for i in range(n) if shortage[i] > 0]
+
+    if not shortage_indices:
+        return OT.tolist()
+    start = min(shortage_indices)
+    end = max(shortage_indices)
+
+    # ===== 3. Tính center =====
+    center = (start + end) / 2
+
+    # ===== 4. Tạo weight (Gaussian mượt hơn) =====
+    weights = np.zeros(n)
+    sigma = max((end - start) / 2, 1)  # tránh chia 0
+
+    for t in range(start, end + 1):
+        distance = abs(t - center)
+        weights[t] = np.exp(-(distance ** 2) / (2 * sigma ** 2))
+
+    # Normalize weights
+    total_weight = weights.sum()
+    if total_weight == 0:
+        return OT.tolist()
+
+    weights = weights / total_weight
+
+    # ===== 5. Tổng shortage cần bù =====
+    total_shortage = sum(shortage)
+
+    # ===== 6. Phân bổ OT =====
+    for t in range(start, end + 1):
+        max_ot = alpha * regular[t]
+        ot_alloc = weights[t] * total_shortage
+
+        OT[t] = min(ot_alloc, max_ot)
+
+    return OT.tolist()
+
+
+def is_feasible(demand, regular, alpha):
+    """
+    Kiểm tra khả năng thực hiện kế hoạch.
+
+    In cảnh báo nếu tổng capacity không đủ đáp ứng tổng demand.
+    
+    Parameters:
+    - demand: list (tổng nhu cầu)
+    - regular: list (sản lượng giờ thường theo tháng)
+    - alpha: float (% OT max so với regular)
+    
+    Returns:
+    - bool: True nếu khả thi, False nếu không
+    """
+    total_capacity = sum(regular) + sum(alpha * r for r in regular)
+    total_demand = sum(demand)
+
+    if total_capacity < total_demand:
+        print("❌ KHÔNG KHẢ THI")
+        return False
+
+    return True
+
+
+def compute_inventory_with_backlog(demand, production):
+    """
+    Tính tồn kho và backlog với carryover:
+    Nếu tháng trước có backlog → tháng này phải bù trước
+    
+    Effective_demand[t] = Forecast[t] + Backlog[t-1]
+    
+    Parameters:
+    - demand: list[int/float]       (nhu cầu forecast theo tháng)
+    - production: list[int/float]   (sản lượng theo tháng)
+    
+    Returns:
+    - beginning: list (tồn đầu kỳ)
+    - ending: list (tồn cuối kỳ)
+    - backlog: list (thiếu hàng/backlog kỳ này)
+    """
+    n = len(demand)
+    beginning = [0] * n
+    ending = [0] * n
+    backlog = [0] * n
+
+    for t in range(n):
+        # Tồn đầu kỳ
+        if t == 0:
+            beginning[t] = 0
+            prev_backlog = 0
+        else:
+            beginning[t] = ending[t - 1]
+            prev_backlog = backlog[t - 1]
+
+        # 👉 Nhu cầu thực tế = forecast + backlog tháng trước (phải bù)
+        effective_demand = demand[t] + prev_backlog
+
+        net = beginning[t] + production[t] - effective_demand
+
+        if net >= 0:
+            ending[t] = net
+            backlog[t] = 0
+        else:
+            ending[t] = 0
+            backlog[t] = -net
+
+    return beginning, ending, backlog
+
+
+def force_final_inventory_zero(demand, production, regular, alpha=0.2):
+    """
+    Ép điều kiện:
+    - Không thiếu hàng cuối kỳ
+    - Ending inventory cuối = 0
+    - Đẩy tăng ca về giữa kỳ
+    
+    Parameters:
+    - demand: list (nhu cầu)
+    - production: list (sản lượng hiện tại)
+    - regular: list (sản lượng giờ thường)
+    - alpha: float (% OT max so với regular)
+    
+    Returns:
+    - production: list (sản lượng đã điều chỉnh)
+    """
+    n = len(demand)
+    total_demand = sum(demand)
+    total_production = sum(production)
+    gap = total_demand - total_production
+
+    # Nếu đã cân bằng thì OK
+    if abs(gap) < 1e-6:
+        return production
+
+    production = list(production)  # copy để không ảnh hưởng original
+
+    # === CASE 1: thiếu → cần tăng production ===
+    if gap > 0:
+        center = n // 2
+
+        for t in sorted(range(n), key=lambda x: abs(x - center)):
+            max_ot = alpha * regular[t]
+            current_ot = production[t] - regular[t]
+            available = max_ot - current_ot
+
+            if available <= 0:
+                continue
+
+            add = min(available, gap)
+            production[t] += add
+            gap -= add
+
+            if gap <= 1e-6:
+                break
+
+    # === CASE 2: dư → giảm production ===
+    elif gap < 0:
+        gap = abs(gap)
+        center = n // 2
+
+        for t in sorted(range(n), key=lambda x: abs(x - center)):
+            reducible = production[t] - regular[t]  # giảm OT trước
+
+            if reducible <= 0:
+                continue
+
+            reduce = min(reducible, gap)
+            production[t] -= reduce
+            gap -= reduce
+
+            if gap <= 1e-6:
+                break
+
+    return production
+
+
+def rebalance_shortage(demand, production, regular, alpha=0.2):
+    """
+    Rebalance shortage bằng cách đẩy production về giữa kỳ
+    Nếu kỳ cuối có backlog, tăng production ở các tháng trước (nhất là giữa)
+    
+    Parameters:
+    - demand: list (nhu cầu)
+    - production: list (sản lượng)
+    - regular: list (sản lượng giờ thường)
+    - alpha: float (% OT max)
+    
+    Returns:
+    - production: list (đã điều chỉnh)
+    """
+    production = list(production)
+    beginning, ending, backlog = compute_inventory_with_backlog(demand, production)
+
+    # Nếu kỳ cuối không có backlog thì OK
+    if backlog[-1] <= 1e-6:
+        return production
+
+    shortage = backlog[-1]
+    center = n // 2 if (n := len(demand)) else 0
+
+    for t in sorted(range(len(demand)), key=lambda x: abs(x - center)):
+        max_ot = alpha * regular[t]
+        available = max_ot - (production[t] - regular[t])
+
+        if available <= 0:
+            continue
+
+        add = min(available, shortage)
+        production[t] += add
+        shortage -= add
+
+        if shortage <= 1e-6:
+            break
+
+    return production
+
+
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def plan_synthesis(request):
-    return render(request, 'inventory/placeholder.html', {
+    from .models import MonthlyProductionData
+
+    def _to_float(raw_value, default=0.0):
+        try:
+            if raw_value is None:
+                return float(default)
+            text = str(raw_value).strip().replace(',', '')
+            if text == '':
+                return float(default)
+            return float(text)
+        except (TypeError, ValueError):
+            return float(default)
+
+    def _to_int(raw_value, default=0):
+        try:
+            if raw_value is None:
+                return int(default)
+            text = str(raw_value).strip().replace(',', '')
+            if text == '':
+                return int(default)
+            return int(float(text))
+        except (TypeError, ValueError):
+            return int(default)
+
+    def _add_months(base_month, months):
+        month_index = base_month.month - 1 + months
+        year = base_month.year + month_index // 12
+        month = month_index % 12 + 1
+        return base_month.replace(year=year, month=month, day=1)
+
+    history_qs = MonthlyProductionData.objects.filter(
+        source=MonthlyProductionData.SOURCE_PLANNING
+    ).order_by('month')
+
+    forecast_mean, forecast_std, forecast_8, mae, rmse, mape = forecast_monthly_total(history_qs=history_qs)
+
+    forecast_rows = []
+    if history_qs.exists():
+        last_month = history_qs.last().month
+        for idx, value in enumerate(forecast_8, start=1):
+            forecast_rows.append({
+                'month': _add_months(last_month, idx).strftime('%m/%Y'),
+                'quantity': int(math.ceil(float(value or 0))),
+            })
+    else:
+        for idx, value in enumerate(forecast_8, start=1):
+            forecast_rows.append({
+                'month': f'Tháng {idx}',
+                'quantity': int(math.ceil(float(value or 0))),
+            })
+
+    defaults = {
+        'opening_inventory': 0,
+        'workers': 50,
+        'productivity': 150,
+        'regular_cost': 0,
+        'overtime_cost': 0,
+        'subcontract_cost': 0,
+        'inventory_cost': 0,
+        'backorder_cost': 0,
+        'ot_limit_pct': 20,
+        'inventory_policy': 0,
+        'hire_cost': 0,
+        'layoff_cost': 0,
+    }
+
+    workforce_adjustments = [0 for _ in forecast_rows]
+
+    if request.method == 'POST':
+        for key in defaults:
+            if key == 'workers':
+                defaults[key] = _to_int(request.POST.get(key), defaults[key])
+            else:
+                defaults[key] = _to_float(request.POST.get(key), defaults[key])
+
+        for idx in range(len(forecast_rows)):
+            workforce_adjustments[idx] = _to_int(request.POST.get(f'workforce_adjustment_{idx + 1}'), 0)
+
+    opening_inventory = float(defaults['opening_inventory'])
+    workers = int(defaults['workers'])
+    productivity = float(defaults['productivity'])
+    regular_cost = float(defaults['regular_cost'])
+    overtime_cost = float(defaults['overtime_cost'])
+    subcontract_cost = float(defaults['subcontract_cost'])
+    inventory_cost = float(defaults['inventory_cost'])
+    backorder_cost = float(defaults['backorder_cost'])
+    ot_limit_pct = max(0.0, float(defaults['ot_limit_pct']))
+    inventory_policy = max(0.0, float(defaults['inventory_policy']))
+    hire_cost = float(defaults['hire_cost'])
+    layoff_cost = float(defaults['layoff_cost'])
+    
+    # Debug: log parameter values
+    import sys
+    print(f"DEBUG: overtime_cost={overtime_cost}, type={type(overtime_cost)}", file=sys.stderr)
+
+    plan_rows = []
+    running_inventory = int(math.ceil(opening_inventory))
+    running_workers = float(workers)
+
+    demand_rows = [int(row['quantity']) for row in forecast_rows]
+    regular_caps = []
+    overtime_caps = []
+    worker_levels = []
+
+    worker_tracker = float(workers)
+    for idx in range(len(demand_rows)):
+        worker_tracker = max(0.0, worker_tracker + workforce_adjustments[idx])
+        worker_levels.append(worker_tracker)
+        month_regular_capacity = max(0, int(math.floor(worker_tracker * productivity + 1e-9)))
+        month_overtime_capacity = 0
+        if overtime_cost > 0:
+            month_overtime_capacity = max(0, int(math.floor(month_regular_capacity * ot_limit_pct / 100.0 + 1e-9)))
+        regular_caps.append(month_regular_capacity)
+        overtime_caps.append(month_overtime_capacity)
+
+    # === CONSTRAINT: Ép ending inventory kỳ cuối = 0, không có backlog kỳ cuối ===
+    # Tạo production array ban đầu = regular capacity
+    initial_production = list(regular_caps)
+    
+    # Gọi force_final_inventory_zero để điều chỉnh
+    alpha_ot = ot_limit_pct / 100.0  # convert % to decimal
+    feasibility_ok = is_feasible(demand_rows, regular_caps, alpha_ot)
+    adjusted_production = force_final_inventory_zero(
+        demand=demand_rows,
+        production=initial_production,
+        regular=regular_caps,
+        alpha=alpha_ot
+    )
+    
+    # Nếu vẫn có backlog kỳ cuối, rebalance thêm
+    adjusted_production = rebalance_shortage(
+        demand=demand_rows,
+        production=adjusted_production,
+        regular=regular_caps,
+        alpha=alpha_ot
+    )
+
+    # === Từ adjusted_production, tính OT needed ===
+    # OT = adjusted_production - regular_caps
+    planned_overtime = [max(0, int(adjusted_production[idx] - regular_caps[idx])) for idx in range(len(demand_rows))]
+    
+    # Ensure OT không vượt quá OT capacity
+    planned_overtime = [min(planned_overtime[idx], overtime_caps[idx]) for idx in range(len(demand_rows))]
+
+    total_regular = 0.0
+    total_overtime = 0.0
+    total_subcontract = 0.0
+    total_inventory_cost = 0.0
+    total_backorder_cost = 0.0
+    total_regular_cost = 0.0
+    total_overtime_cost = 0.0
+    total_subcontract_cost = 0.0
+    total_workforce_hire_cost = 0.0
+    total_workforce_layoff_cost = 0.0
+    total_cost = 0.0
+
+    # Run allocation, and if the last period ends with backorder, attempt one reallocation
+    max_attempts = 2
+    attempt = 0
+    while attempt < max_attempts:
+        plan_rows = []
+        running_inventory = int(math.ceil(opening_inventory))
+        running_workers = float(workers)
+        running_backlog = 0.0  # Track backlog từ tháng trước để carryover
+
+        total_regular = 0.0
+        total_overtime = 0.0
+        total_subcontract = 0.0
+        total_inventory_cost = 0.0
+        total_backorder_cost = 0.0
+        total_regular_cost = 0.0
+        total_overtime_cost = 0.0
+        total_subcontract_cost = 0.0
+        total_workforce_hire_cost = 0.0
+        total_workforce_layoff_cost = 0.0
+        total_cost = 0.0
+        debug_overtime = []
+
+        for idx, demand_qty in enumerate(demand_rows):
+            workforce_change = workforce_adjustments[idx] if idx < len(workforce_adjustments) else 0
+            running_workers = worker_levels[idx]
+            month_regular_capacity = regular_caps[idx]
+            month_overtime_capacity = overtime_caps[idx]
+
+            # === Tính effective_demand = forecast + backlog tháng trước ===
+            effective_demand = demand_qty + running_backlog
+
+            # === Sử dụng adjusted_production đã ép constraint ===
+            # Phân bổ: Regular trước, rồi OT, rồi Subcontract
+            target_production = adjusted_production[idx]
+            
+            regular_qty = min(month_regular_capacity, target_production)
+            remaining_production = target_production - regular_qty
+            
+            overtime_qty = min(month_overtime_capacity, remaining_production)
+            remaining_production = remaining_production - overtime_qty
+            
+            subcontract_qty = remaining_production
+            
+            # Clamp OT xong thì chốt lại production từ 3 thành phần cuối cùng
+            total_production = regular_qty + overtime_qty + subcontract_qty
+            debug_overtime.append(overtime_qty)
+            
+            # === Tính ending inventory dùng effective_demand (có tính backlog carryover) ===
+            ending_inventory_raw = running_inventory + total_production - effective_demand
+            backorder_qty = 0
+            ending_inventory = ending_inventory_raw
+
+            if ending_inventory_raw < 0:
+                backorder_qty = abs(ending_inventory_raw)
+                ending_inventory = 0
+
+            average_inventory = max(0.0, (running_inventory + ending_inventory) / 2.0)
+            policy_gap = max(0.0, ending_inventory - inventory_policy)
+            workforce_hire_cost = max(0, workforce_change) * hire_cost
+            workforce_layoff_cost = max(0, -workforce_change) * layoff_cost
+
+            row_regular_cost = regular_qty * regular_cost
+            row_overtime_cost = overtime_qty * overtime_cost
+            row_subcontract_cost = subcontract_qty * subcontract_cost
+            row_inventory_cost = average_inventory * inventory_cost
+            row_backorder_cost = backorder_qty * backorder_cost
+            row_total_cost = (
+                row_regular_cost
+                + row_overtime_cost
+                + row_subcontract_cost
+                + row_inventory_cost
+                + row_backorder_cost
+                + workforce_hire_cost
+                + workforce_layoff_cost
+            )
+
+            plan_rows.append({
+                'month': str(forecast_rows[idx]['month']),
+                'forecast': demand_qty,
+                'beginning_inventory': running_inventory,
+                'workers': running_workers,
+                'workforce_change': workforce_change,
+                'regular_capacity': month_regular_capacity,
+                'overtime_capacity': month_overtime_capacity,
+                'regular': regular_qty,
+                'overtime': overtime_qty,
+                'subcontract': subcontract_qty,
+                'production': total_production,
+                'ending_inventory': ending_inventory,
+                'backorder': backorder_qty,
+                'average_inventory': average_inventory,
+                'policy_gap': policy_gap,
+                'within_ot_limit': overtime_qty <= month_overtime_capacity + 1e-9,
+                'regular_cost': row_regular_cost,
+            'overtime_cost': row_overtime_cost,
+            'subcontract_cost': row_subcontract_cost,
+            'inventory_cost': row_inventory_cost,
+            'backorder_cost': row_backorder_cost,
+            'workforce_hire_cost': workforce_hire_cost,
+            'workforce_layoff_cost': workforce_layoff_cost,
+            'total_cost': row_total_cost,
+            })
+
+            running_inventory = ending_inventory
+            running_backlog = backorder_qty  # 👉 Carryover backlog sang tháng tiếp theo
+
+        # end of allocation loop for this attempt
+
+        # === Check if final period still has backlog due to carryover ===
+        # If so, need to rebalance production to earlier periods
+        last_backorder = plan_rows[-1]['backorder'] if plan_rows else 0
+        if last_backorder > 0 and attempt < max_attempts - 1:
+            # Tăng production ở các tháng trước (nhất là giữa) bằng rebalance_shortage
+            adjusted_production = rebalance_shortage(
+                demand=demand_rows,
+                production=adjusted_production,
+                regular=regular_caps,
+                alpha=alpha_ot
+            )
+            attempt += 1
+            continue
+        else:
+            # === Finished: enforce final constraints ===
+            # Nếu vẫn có backlog cuối, buộc ending = 0 bằng cách giảm nó
+            if plan_rows and running_backlog > 0:
+                # Reduce production ở tháng cuối để xóa backlog
+                last_row = plan_rows[-1]
+                excess_needed = running_backlog
+                for key in ('subcontract', 'overtime', 'regular'):
+                    if excess_needed <= 0:
+                        break
+                    reducible = min(last_row[key], excess_needed)
+                    last_row[key] -= reducible
+                    excess_needed -= reducible
+                last_row['production'] = last_row['regular'] + last_row['overtime'] + last_row['subcontract']
+                last_row['backorder'] = 0
+                last_row['ending_inventory'] = max(0, running_inventory + last_row['production'] - (demand_rows[-1] + plan_rows[-2]['backorder'] if len(plan_rows) > 1 else 0))
+                last_row['average_inventory'] = max(0.0, (last_row['beginning_inventory'] + last_row['ending_inventory']) / 2.0)
+                last_row['inventory_cost'] = last_row['average_inventory'] * inventory_cost
+                last_row['regular_cost'] = last_row['regular'] * regular_cost
+                last_row['overtime_cost'] = last_row['overtime'] * overtime_cost
+                last_row['subcontract_cost'] = last_row['subcontract'] * subcontract_cost
+                last_row['backorder_cost'] = 0
+                last_row['policy_gap'] = max(0.0, last_row['ending_inventory'] - inventory_policy)
+                last_row['total_cost'] = (
+                    last_row['regular_cost']
+                    + last_row['overtime_cost']
+                    + last_row['subcontract_cost']
+                    + last_row['inventory_cost']
+                    + last_row['backorder_cost']
+                    + last_row['workforce_hire_cost']
+                    + last_row['workforce_layoff_cost']
+                )
+
+            total_regular = sum(row['regular'] for row in plan_rows)
+            total_overtime = sum(row['overtime'] for row in plan_rows)
+            total_subcontract = sum(row['subcontract'] for row in plan_rows)
+            total_inventory_cost = sum(row['inventory_cost'] for row in plan_rows)
+            total_backorder_cost = sum(row['backorder_cost'] for row in plan_rows)
+            total_regular_cost = sum(row['regular_cost'] for row in plan_rows)
+            total_overtime_cost = sum(row['overtime_cost'] for row in plan_rows)
+            total_subcontract_cost = sum(row['subcontract_cost'] for row in plan_rows)
+            total_workforce_hire_cost = sum(row['workforce_hire_cost'] for row in plan_rows)
+            total_workforce_layoff_cost = sum(row['workforce_layoff_cost'] for row in plan_rows)
+            total_cost = sum(row['total_cost'] for row in plan_rows)
+
+            print("OT từng tháng:", [row['overtime'] for row in plan_rows])
+            print("Tổng OT:", total_overtime)
+            print("Debug OT đã clamp:", debug_overtime)
+            break
+
+    workforce_total_change = sum(workforce_adjustments)
+    workforce_end = running_workers
+    workforce_cost = total_workforce_hire_cost + total_workforce_layoff_cost
+    workforce_action = 'Ổn định'
+    if workforce_total_change > 0:
+        workforce_action = 'Tuyển thêm'
+    elif workforce_total_change < 0:
+        workforce_action = 'Sa thải'
+
+    summary_cards = [
+        {
+            'label': 'Tổng chi phí',
+            'value': int(round(total_cost)),
+        },
+        {
+            'label': 'Sản lượng thường',
+            'value': int(total_regular),
+        },
+        {
+            'label': 'Làm thêm giờ',
+            'value': int(total_overtime),
+        },
+        {
+            'label': 'Thuê ngoài',
+            'value': int(total_subcontract),
+        },
+    ]
+
+    history_rows = [
+        {
+            'month': item.month.strftime('%m/%Y'),
+            'quantity': float(item.quantity or 0),
+        }
+        for item in history_qs
+    ]
+
+    planning_metrics = [
+        {
+            'label': 'DỰ BÁO',
+            'is_group': False,
+            'integer_values': True,
+            'values': [int(row['forecast']) for row in plan_rows],
+            'total': int(sum(row['forecast'] for row in plan_rows)),
+        },
+        {
+            'label': 'SẢN LƯỢNG',
+            'is_group': True,
+            'items': [
+                {
+                    'label': 'Giờ thường',
+                    'integer_values': True,
+                    'values': [int(row['regular']) for row in plan_rows],
+                    'total': int(total_regular),
+                },
+                {
+                    'label': 'Tăng ca',
+                    'integer_values': True,
+                    'values': [int(row['overtime']) for row in plan_rows],
+                    'total': int(total_overtime),
+                },
+                {
+                    'label': 'Thuê ngoài',
+                    'integer_values': True,
+                    'values': [int(row['subcontract']) for row in plan_rows],
+                    'total': int(total_subcontract),
+                },
+            ]
+        },
+        {
+            'label': 'SẢN LƯỢNG – DỰ BÁO',
+            'is_group': False,
+            'integer_values': True,
+            'values': [int(row['production'] - row['forecast']) for row in plan_rows],
+            'total': int(sum((row['production'] - row['forecast']) for row in plan_rows)),
+        },
+        {
+            'label': 'TỒN KHO',
+            'is_group': True,
+            'items': [
+                {
+                    'label': 'Tồn đầu kỳ',
+                    'integer_values': True,
+                    'values': [int(row['beginning_inventory']) for row in plan_rows],
+                    'total': None,
+                },
+                {
+                    'label': 'Tồn cuối kỳ',
+                    'integer_values': True,
+                    'values': [int(row['ending_inventory']) for row in plan_rows],
+                    'total': None,
+                },
+                {
+                    'label': 'Tồn trung bình',
+                    'integer_values': True,
+                    'values': [int(row['average_inventory']) for row in plan_rows],
+                    'total': None,
+                },
+                {
+                    'label': 'Thiếu hàng',
+                    'integer_values': True,
+                    'values': [int(row['backorder']) for row in plan_rows],
+                    'total': int(sum(row['backorder'] for row in plan_rows)),
+                },
+            ]
+        },
+        {
+            'label': 'CHI PHÍ',
+            'is_group': True,
+            'items': [
+                {
+                    'label': 'Chi phí sản xuất',
+                    'is_subgroup': True,
+                    'items': [
+                        {
+                            'label': 'Giờ thường',
+                            'integer_values': True,
+                            'values': [int(round(row['regular_cost'])) for row in plan_rows],
+                            'total': int(round(total_regular_cost)),
+                        },
+                        {
+                            'label': 'Tăng ca',
+                            'integer_values': True,
+                            'values': [int(round(row['overtime_cost'])) for row in plan_rows],
+                            'total': int(round(total_overtime_cost)),
+                        },
+                        {
+                            'label': 'Thuê ngoài',
+                            'integer_values': True,
+                            'values': [int(round(row['subcontract_cost'])) for row in plan_rows],
+                            'total': int(round(total_subcontract_cost)),
+                        },
+                        {
+                            'label': 'Tuyển dụng/Sa thải',
+                            'editable': True,
+                            'values': [int(row['workforce_change']) for row in plan_rows],
+                            'total': int(round(sum(row['workforce_change'] for row in plan_rows))),
+                        },
+                    ]
+                },
+                {
+                    'label': 'Chi phí tồn kho',
+                    'integer_values': True,
+                    'values': [int(round(row['inventory_cost'])) for row in plan_rows],
+                    'total': int(round(total_inventory_cost)),
+                },
+                {
+                    'label': 'Chi phí thiếu hàng',
+                    'integer_values': True,
+                    'values': [int(round(row['backorder_cost'])) for row in plan_rows],
+                    'total': int(round(total_backorder_cost)),
+                },
+                {
+                    'label': 'Tổng chi phí',
+                    'integer_values': True,
+                    'values': [int(round(row['total_cost'])) for row in plan_rows],
+                    'total': int(round(total_cost)),
+                },
+            ]
+        },
+    ]
+
+    first_plan_row = plan_rows[0] if plan_rows else {}
+
+    return render(request, 'inventory/plan_synthesis.html', {
         'title': 'Kế hoạch tổng hợp',
-        'message': 'Trang Kế hoạch tổng hợp đang được xây dựng.'
+        'history_rows': history_rows,
+        'forecast_rows': forecast_rows,
+        'plan_rows': plan_rows,
+        'planning_metrics': planning_metrics,
+        'summary_cards': summary_cards,
+        'forecast_mean': round(float(forecast_mean or 0), 2),
+        'forecast_std': round(float(forecast_std or 0), 2),
+        'mae': round(float(mae or 0), 2),
+        'rmse': round(float(rmse or 0), 2),
+        'mape': round(float(mape or 0), 2),
+        'opening_inventory': opening_inventory,
+        'workers': workers,
+        'productivity': productivity,
+        'regular_capacity': first_plan_row.get('regular_capacity', 0.0),
+        'overtime_capacity': first_plan_row.get('overtime_capacity', 0.0),
+        'regular_cost': regular_cost,
+        'overtime_cost': overtime_cost,
+        'subcontract_cost': subcontract_cost,
+        'inventory_cost': inventory_cost,
+        'backorder_cost': backorder_cost,
+        'ot_limit_pct': ot_limit_pct,
+        'inventory_policy': inventory_policy,
+        'hire_cost': hire_cost,
+        'layoff_cost': layoff_cost,
+        'workforce_action': workforce_action,
+        'workforce_cost': workforce_cost,
+        'workforce_total_change': workforce_total_change,
+        'workforce_end': workforce_end,
+        'workforce_adjustments': workforce_adjustments,
+        'feasibility_ok': feasibility_ok,
+        'feasibility_message': None if feasibility_ok else '❌ KHÔNG KHẢ THI: tổng capacity hiện tại nhỏ hơn tổng demand, nên kế hoạch vẫn thiếu hàng.',
+        'forecast_note': 'OT limit = OT_t <= alpha x regular capacity. If overtime cost is blank, overtime is disabled. If subcontract cost is blank, subcontract is disabled. Inventory policy is treated as an upper limit I_t <= I_max. Production quantities are rounded to whole units.',
+        'forecast_total': round(sum(item['quantity'] for item in forecast_rows), 2),
     })
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def save_planning_config(request):
+    """API endpoint to save planning configuration"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    from .models import PlanningConfiguration
+    import json
+
+    def _safe_float(value, default=0.0):
+        try:
+            if value is None:
+                return float(default)
+            text = str(value).strip().replace(',', '')
+            if text == '':
+                return float(default)
+            return float(text)
+        except (TypeError, ValueError):
+            return float(default)
+
+    def _safe_int(value, default=0):
+        try:
+            if value is None:
+                return int(default)
+            text = str(value).strip().replace(',', '')
+            if text == '':
+                return int(default)
+            return int(float(text))
+        except (TypeError, ValueError):
+            return int(default)
+    
+    try:
+        data = json.loads(request.body)
+        
+        # Check if config exists
+        config = PlanningConfiguration.objects.last()
+        is_update = config is not None
+        
+        # Save or update
+        if config:
+            config.opening_inventory = _safe_float(data.get('opening_inventory', 0))
+            config.workers = _safe_int(data.get('workers', 50))
+            config.productivity = _safe_float(data.get('productivity', 150))
+            config.regular_cost = _safe_float(data.get('regular_cost', 0))
+            config.overtime_cost = _safe_float(data.get('overtime_cost', 0))
+            config.subcontract_cost = _safe_float(data.get('subcontract_cost', 0))
+            config.inventory_cost = _safe_float(data.get('inventory_cost', 0))
+            config.backorder_cost = _safe_float(data.get('backorder_cost', 0))
+            config.ot_limit_pct = _safe_float(data.get('ot_limit_pct', 20))
+            config.inventory_policy = _safe_float(data.get('inventory_policy', 0))
+            config.current_workers = _safe_int(data.get('current_workers', 50))
+            config.hire_cost = _safe_float(data.get('hire_cost', 0))
+            config.layoff_cost = _safe_float(data.get('layoff_cost', 0))
+            config.save()
+            action = 'updated'
+        else:
+            config = PlanningConfiguration.objects.create(
+                opening_inventory=_safe_float(data.get('opening_inventory', 0)),
+                workers=_safe_int(data.get('workers', 50)),
+                productivity=_safe_float(data.get('productivity', 150)),
+                regular_cost=_safe_float(data.get('regular_cost', 0)),
+                overtime_cost=_safe_float(data.get('overtime_cost', 0)),
+                subcontract_cost=_safe_float(data.get('subcontract_cost', 0)),
+                inventory_cost=_safe_float(data.get('inventory_cost', 0)),
+                backorder_cost=_safe_float(data.get('backorder_cost', 0)),
+                ot_limit_pct=_safe_float(data.get('ot_limit_pct', 20)),
+                inventory_policy=_safe_float(data.get('inventory_policy', 0)),
+                current_workers=_safe_int(data.get('current_workers', 50)),
+                hire_cost=_safe_float(data.get('hire_cost', 0)),
+                layoff_cost=_safe_float(data.get('layoff_cost', 0)),
+            )
+            action = 'created'
+        
+        return JsonResponse({
+            'success': True,
+            'action': action,
+            'message': f'Dữ liệu kế hoạch đã được lưu thành công!'
+        })
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
 
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
