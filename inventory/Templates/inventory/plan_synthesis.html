@@ -262,6 +262,12 @@
   </div>
   {% endif %}
 
+  {% if error_message %}
+  <div class="plan-panel" style="grid-column: 1 / -1; border: 2px solid #dc2626; background: #fee2e2; color: #991b1b; padding: 16px 20px;">
+    <strong style="font-size: 14px;">{{ error_message }}</strong>
+  </div>
+  {% endif %}
+
   <div class="plan-panel">
     <h2 class="plan-section-title">Thông số đầu vào</h2>
     <form method="post" class="plan-form">

@@ -114,157 +114,132 @@ def is_feasible(demand, regular, alpha):
     return True
 
 
-def compute_inventory_with_backlog(demand, production):
+def optimize_aggregate_plan_lp(demand, regular_caps, cost_params, alpha=0.2):
     """
-    Tính tồn kho và backlog với carryover:
-    Nếu tháng trước có backlog → tháng này phải bù trước
-    
-    Effective_demand[t] = Forecast[t] + Backlog[t-1]
+    Giải Aggregate Planning bằng Linear Programming.
     
     Parameters:
-    - demand: list[int/float]       (nhu cầu forecast theo tháng)
-    - production: list[int/float]   (sản lượng theo tháng)
+    - demand: list (nhu cầu từng tháng)
+    - regular_caps: list (capacity giờ thường)
+    - cost_params: dict (regular_cost, overtime_cost, subcontract_cost, inventory_cost, backorder_cost)
+    - alpha: float (OT limit, e.g., 0.2 = 20%)
     
     Returns:
-    - beginning: list (tồn đầu kỳ)
-    - ending: list (tồn cuối kỳ)
-    - backlog: list (thiếu hàng/backlog kỳ này)
+    - result: list[dict] với keys: regular, overtime, subcontract, inventory, backlog cho mỗi tháng
+    - total_cost: float
     """
+    import pulp
+    
     n = len(demand)
-    beginning = [0] * n
-    ending = [0] * n
-    backlog = [0] * n
-
+    model = pulp.LpProblem("Aggregate_Planning", pulp.LpMinimize)
+    
+    # ===== Variables =====
+    R = pulp.LpVariable.dicts("Regular", range(n), lowBound=0)  # Regular production
+    O = pulp.LpVariable.dicts("Overtime", range(n), lowBound=0)  # Overtime production
+    S = pulp.LpVariable.dicts("Subcontract", range(n), lowBound=0)  # Subcontract
+    I = pulp.LpVariable.dicts("Inventory", range(n), lowBound=0)  # Ending inventory
+    B = pulp.LpVariable.dicts("Backlog", range(n), lowBound=0)  # Backlog
+    
+    # ===== Objective: Minimize total cost =====
+    model += pulp.lpSum(
+        R[t] * cost_params['regular_cost']
+        + O[t] * cost_params['overtime_cost']
+        + S[t] * cost_params['subcontract_cost']
+        + I[t] * cost_params['inventory_cost']
+        + B[t] * cost_params['backorder_cost']
+        for t in range(n)
+    )
+    
+    # ===== Constraints =====
     for t in range(n):
-        # Tồn đầu kỳ
+        # Inventory balance equation
         if t == 0:
-            beginning[t] = 0
-            prev_backlog = 0
+            # Beginning inventory = 0, so: Production - Demand = Ending Inventory - Backlog
+            model += R[t] + O[t] + S[t] == demand[t] + I[t] - B[t]
         else:
-            beginning[t] = ending[t - 1]
-            prev_backlog = backlog[t - 1]
-
-        # 👉 Nhu cầu thực tế = forecast + backlog tháng trước (phải bù)
-        effective_demand = demand[t] + prev_backlog
-
-        net = beginning[t] + production[t] - effective_demand
-
-        if net >= 0:
-            ending[t] = net
-            backlog[t] = 0
+            # Previous ending inventory + Production = Demand + Previous backlog + Current ending inventory
+            model += I[t-1] + R[t] + O[t] + S[t] == demand[t] + B[t-1] + I[t]
+        
+        # Capacity constraints
+        model += R[t] <= regular_caps[t]
+        
+        # Overtime capacity
+        if cost_params['overtime_cost'] > 0:
+            model += O[t] <= alpha * regular_caps[t]
         else:
-            ending[t] = 0
-            backlog[t] = -net
+            model += O[t] == 0
+        
+        # Subcontract capacity (unlimited)
+        if cost_params['subcontract_cost'] <= 0:
+            model += S[t] == 0
+    
+    # Final constraint: Ending inventory = 0, No backlog in final period
+    model += I[n-1] == 0
+    model += B[n-1] == 0
+    
+    # ===== Solve =====
+    model.solve(pulp.PULP_CBC_CMD(msg=0))
+    
+    # Check if solution exists
+    status = pulp.LpStatus[model.status]
+    if status != 'Optimal':
+        return None, status
+    
+    # ===== Extract results =====
+    result = []
+    for t in range(n):
+        result.append({
+            'regular': R[t].value() or 0,
+            'overtime': O[t].value() or 0,
+            'subcontract': S[t].value() or 0,
+            'inventory': I[t].value() or 0,
+            'backlog': B[t].value() or 0,
+        })
+    
+    total_cost = pulp.value(model.objective)
+    
+    return result, total_cost
 
-    return beginning, ending, backlog
 
-
-def force_final_inventory_zero(demand, production, regular, alpha=0.2):
+def find_best_ot_alpha(demand_rows, regular_caps, cost_params):
     """
-    Ép điều kiện:
-    - Không thiếu hàng cuối kỳ
-    - Ending inventory cuối = 0
-    - Đẩy tăng ca về giữa kỳ
+    Tìm OT limit tối ưu (0-50%) với min total cost.
+    Chạy LP mỗi lần thử alpha để tìm min cost solution.
     
     Parameters:
-    - demand: list (nhu cầu)
-    - production: list (sản lượng hiện tại)
-    - regular: list (sản lượng giờ thường)
-    - alpha: float (% OT max so với regular)
+    - demand_rows: list (nhu cầu mỗi tháng)
+    - regular_caps: list (capacity giờ thường mỗi tháng)
+    - cost_params: dict (regular_cost, overtime_cost, subcontract_cost, inventory_cost, backorder_cost)
     
     Returns:
-    - production: list (sản lượng đã điều chỉnh)
+    - best_alpha: float (% OT tối ưu, từ 0 đến 0.5)
+    - best_cost: float (tổng cost tối ưu)
     """
-    n = len(demand)
-    total_demand = sum(demand)
-    total_production = sum(production)
-    gap = total_demand - total_production
-
-    # Nếu đã cân bằng thì OK
-    if abs(gap) < 1e-6:
-        return production
-
-    production = list(production)  # copy để không ảnh hưởng original
-
-    # === CASE 1: thiếu → cần tăng production ===
-    if gap > 0:
-        center = n // 2
-
-        for t in sorted(range(n), key=lambda x: abs(x - center)):
-            max_ot = alpha * regular[t]
-            current_ot = production[t] - regular[t]
-            available = max_ot - current_ot
-
-            if available <= 0:
-                continue
-
-            add = min(available, gap)
-            production[t] += add
-            gap -= add
-
-            if gap <= 1e-6:
-                break
-
-    # === CASE 2: dư → giảm production ===
-    elif gap < 0:
-        gap = abs(gap)
-        center = n // 2
-
-        for t in sorted(range(n), key=lambda x: abs(x - center)):
-            reducible = production[t] - regular[t]  # giảm OT trước
-
-            if reducible <= 0:
-                continue
-
-            reduce = min(reducible, gap)
-            production[t] -= reduce
-            gap -= reduce
-
-            if gap <= 1e-6:
-                break
-
-    return production
-
-
-def rebalance_shortage(demand, production, regular, alpha=0.2):
-    """
-    Rebalance shortage bằng cách đẩy production về giữa kỳ
-    Nếu kỳ cuối có backlog, tăng production ở các tháng trước (nhất là giữa)
+    best_cost = float('inf')
+    best_alpha = 0.0
     
-    Parameters:
-    - demand: list (nhu cầu)
-    - production: list (sản lượng)
-    - regular: list (sản lượng giờ thường)
-    - alpha: float (% OT max)
-    
-    Returns:
-    - production: list (đã điều chỉnh)
-    """
-    production = list(production)
-    beginning, ending, backlog = compute_inventory_with_backlog(demand, production)
-
-    # Nếu kỳ cuối không có backlog thì OK
-    if backlog[-1] <= 1e-6:
-        return production
-
-    shortage = backlog[-1]
-    center = n // 2 if (n := len(demand)) else 0
-
-    for t in sorted(range(len(demand)), key=lambda x: abs(x - center)):
-        max_ot = alpha * regular[t]
-        available = max_ot - (production[t] - regular[t])
-
-        if available <= 0:
+    # Thử từ 0% → 50% (bước 2%)
+    for alpha_pct in range(0, 51, 2):
+        alpha = alpha_pct / 100.0
+        
+        # Chạy LP với alpha này
+        result, total_cost = optimize_aggregate_plan_lp(demand_rows, regular_caps, cost_params, alpha=alpha)
+        
+        # Nếu không có feasible solution, skip
+        if result is None:
             continue
+        
+        if total_cost < best_cost:
+            best_cost = total_cost
+            best_alpha = alpha
+    
+    return best_alpha, best_cost
 
-        add = min(available, shortage)
-        production[t] += add
-        shortage -= add
 
-        if shortage <= 1e-6:
-            break
 
-    return production
+
+
+
 
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
@@ -384,35 +359,35 @@ def plan_synthesis(request):
         regular_caps.append(month_regular_capacity)
         overtime_caps.append(month_overtime_capacity)
 
-    # === CONSTRAINT: Ép ending inventory kỳ cuối = 0, không có backlog kỳ cuối ===
-    # Tạo production array ban đầu = regular capacity
-    initial_production = list(regular_caps)
-    
-    # Gọi force_final_inventory_zero để điều chỉnh
+    # === Setup cost optimization ===
     alpha_ot = ot_limit_pct / 100.0  # convert % to decimal
-    feasibility_ok = is_feasible(demand_rows, regular_caps, alpha_ot)
-    adjusted_production = force_final_inventory_zero(
-        demand=demand_rows,
-        production=initial_production,
-        regular=regular_caps,
-        alpha=alpha_ot
-    )
     
-    # Nếu vẫn có backlog kỳ cuối, rebalance thêm
-    adjusted_production = rebalance_shortage(
-        demand=demand_rows,
-        production=adjusted_production,
-        regular=regular_caps,
-        alpha=alpha_ot
-    )
-
-    # === Từ adjusted_production, tính OT needed ===
-    # OT = adjusted_production - regular_caps
-    planned_overtime = [max(0, int(adjusted_production[idx] - regular_caps[idx])) for idx in range(len(demand_rows))]
+    cost_params = {
+        'regular_cost': regular_cost,
+        'overtime_cost': overtime_cost,
+        'subcontract_cost': subcontract_cost,
+        'inventory_cost': inventory_cost,
+        'backorder_cost': backorder_cost,
+    }
     
-    # Ensure OT không vượt quá OT capacity
-    planned_overtime = [min(planned_overtime[idx], overtime_caps[idx]) for idx in range(len(demand_rows))]
-
+    # Initialize feasibility tracking
+    feasibility_ok = False
+    feasibility_message = None
+    
+    # Nếu ot_limit_pct = 0 → tìm optimal alpha
+    if ot_limit_pct <= 0:
+        alpha_ot, _ = find_best_ot_alpha(demand_rows, regular_caps, cost_params)
+        ot_limit_pct = alpha_ot * 100.0
+        # Recalculate OT capacity với alpha tối ưu
+        for idx in range(len(demand_rows)):
+            month_regular_capacity = regular_caps[idx]
+            month_overtime_capacity = max(0, int(math.floor(month_regular_capacity * ot_limit_pct / 100.0 + 1e-9)))
+            overtime_caps[idx] = month_overtime_capacity
+    
+    # === Run LP optimization ===
+    lp_result, status_or_cost = optimize_aggregate_plan_lp(demand_rows, regular_caps, cost_params, alpha=alpha_ot)
+    
+    # Initialize totals (before checking feasibility)
     total_regular = 0.0
     total_overtime = 0.0
     total_subcontract = 0.0
@@ -424,101 +399,90 @@ def plan_synthesis(request):
     total_workforce_hire_cost = 0.0
     total_workforce_layoff_cost = 0.0
     total_cost = 0.0
-
-    # Run allocation, and if the last period ends with backorder, attempt one reallocation
-    max_attempts = 2
-    attempt = 0
-    while attempt < max_attempts:
-        plan_rows = []
-        running_inventory = int(math.ceil(opening_inventory))
-        running_workers = float(workers)
-        running_backlog = 0.0  # Track backlog từ tháng trước để carryover
-
-        total_regular = 0.0
-        total_overtime = 0.0
-        total_subcontract = 0.0
-        total_inventory_cost = 0.0
-        total_backorder_cost = 0.0
-        total_regular_cost = 0.0
-        total_overtime_cost = 0.0
-        total_subcontract_cost = 0.0
-        total_workforce_hire_cost = 0.0
-        total_workforce_layoff_cost = 0.0
-        total_cost = 0.0
-        debug_overtime = []
-
-        for idx, demand_qty in enumerate(demand_rows):
-            workforce_change = workforce_adjustments[idx] if idx < len(workforce_adjustments) else 0
-            running_workers = worker_levels[idx]
-            month_regular_capacity = regular_caps[idx]
-            month_overtime_capacity = overtime_caps[idx]
-
-            # === Tính effective_demand = forecast + backlog tháng trước ===
-            effective_demand = demand_qty + running_backlog
-
-            # === Sử dụng adjusted_production đã ép constraint ===
-            # Phân bổ: Regular trước, rồi OT, rồi Subcontract
-            target_production = adjusted_production[idx]
-            
-            regular_qty = min(month_regular_capacity, target_production)
-            remaining_production = target_production - regular_qty
-            
-            overtime_qty = min(month_overtime_capacity, remaining_production)
-            remaining_production = remaining_production - overtime_qty
-            
-            subcontract_qty = remaining_production
-            
-            # Clamp OT xong thì chốt lại production từ 3 thành phần cuối cùng
-            total_production = regular_qty + overtime_qty + subcontract_qty
-            debug_overtime.append(overtime_qty)
-            
-            # === Tính ending inventory dùng effective_demand (có tính backlog carryover) ===
-            ending_inventory_raw = running_inventory + total_production - effective_demand
-            backorder_qty = 0
-            ending_inventory = ending_inventory_raw
-
-            if ending_inventory_raw < 0:
-                backorder_qty = abs(ending_inventory_raw)
-                ending_inventory = 0
-
-            average_inventory = max(0.0, (running_inventory + ending_inventory) / 2.0)
-            policy_gap = max(0.0, ending_inventory - inventory_policy)
-            workforce_hire_cost = max(0, workforce_change) * hire_cost
-            workforce_layoff_cost = max(0, -workforce_change) * layoff_cost
-
-            row_regular_cost = regular_qty * regular_cost
-            row_overtime_cost = overtime_qty * overtime_cost
-            row_subcontract_cost = subcontract_qty * subcontract_cost
-            row_inventory_cost = average_inventory * inventory_cost
-            row_backorder_cost = backorder_qty * backorder_cost
-            row_total_cost = (
-                row_regular_cost
-                + row_overtime_cost
-                + row_subcontract_cost
-                + row_inventory_cost
-                + row_backorder_cost
-                + workforce_hire_cost
-                + workforce_layoff_cost
-            )
-
-            plan_rows.append({
-                'month': str(forecast_rows[idx]['month']),
-                'forecast': demand_qty,
-                'beginning_inventory': running_inventory,
-                'workers': running_workers,
-                'workforce_change': workforce_change,
-                'regular_capacity': month_regular_capacity,
-                'overtime_capacity': month_overtime_capacity,
-                'regular': regular_qty,
-                'overtime': overtime_qty,
-                'subcontract': subcontract_qty,
-                'production': total_production,
-                'ending_inventory': ending_inventory,
-                'backorder': backorder_qty,
-                'average_inventory': average_inventory,
-                'policy_gap': policy_gap,
-                'within_ot_limit': overtime_qty <= month_overtime_capacity + 1e-9,
-                'regular_cost': row_regular_cost,
+    
+    # Kiểm tra nếu LP không có feasible solution
+    if lp_result is None:
+        # Return error page with status message
+        return render(request, 'inventory/plan_synthesis.html', {
+            'forecast_rows': forecast_rows,
+            'defaults': defaults,
+            'plan_rows': [],
+            'summary_cards': [],
+            'history_rows': [],
+            'planning_metrics': [],
+            'cost_breakdown': [],
+            'workforce_summary': [],
+            'error_message': f'Kế hoạch không khả thi ({status_or_cost}). Hãy tăng OT limit hoặc bật subcontract.',
+            'feasibility_ok': False,
+        })
+    
+    # LP solved successfully
+    lp_cost = status_or_cost
+    feasibility_ok = True
+    
+    # === Build plan_rows từ LP result ===
+    plan_rows = []
+    
+    for idx, demand_qty in enumerate(demand_rows):
+        workforce_change = workforce_adjustments[idx] if idx < len(workforce_adjustments) else 0
+        running_workers = worker_levels[idx]
+        month_regular_capacity = regular_caps[idx]
+        month_overtime_capacity = overtime_caps[idx]
+        
+        # Get LP solution for this month
+        lp_month = lp_result[idx]
+        regular_qty = int(round(lp_month['regular']))
+        overtime_qty = int(round(lp_month['overtime']))
+        subcontract_qty = int(round(lp_month['subcontract']))
+        ending_inventory = int(round(lp_month['inventory']))
+        backorder_qty = int(round(lp_month['backlog']))
+        
+        total_production = regular_qty + overtime_qty + subcontract_qty
+        
+        # Tính beginning inventory từ LP
+        if idx == 0:
+            beginning_inventory = int(math.ceil(opening_inventory))
+        else:
+            beginning_inventory = int(round(lp_result[idx-1]['inventory']))
+        
+        average_inventory = max(0.0, (beginning_inventory + ending_inventory) / 2.0)
+        policy_gap = max(0.0, ending_inventory - inventory_policy)
+        workforce_hire_cost = max(0, workforce_change) * hire_cost
+        workforce_layoff_cost = max(0, -workforce_change) * layoff_cost
+        
+        row_regular_cost = regular_qty * regular_cost
+        row_overtime_cost = overtime_qty * overtime_cost
+        row_subcontract_cost = subcontract_qty * subcontract_cost
+        row_inventory_cost = average_inventory * inventory_cost
+        row_backorder_cost = backorder_qty * backorder_cost
+        row_total_cost = (
+            row_regular_cost
+            + row_overtime_cost
+            + row_subcontract_cost
+            + row_inventory_cost
+            + row_backorder_cost
+            + workforce_hire_cost
+            + workforce_layoff_cost
+        )
+        
+        plan_rows.append({
+            'month': str(forecast_rows[idx]['month']),
+            'forecast': demand_qty,
+            'beginning_inventory': beginning_inventory,
+            'workers': running_workers,
+            'workforce_change': workforce_change,
+            'regular_capacity': month_regular_capacity,
+            'overtime_capacity': month_overtime_capacity,
+            'regular': regular_qty,
+            'overtime': overtime_qty,
+            'subcontract': subcontract_qty,
+            'production': total_production,
+            'ending_inventory': ending_inventory,
+            'backorder': backorder_qty,
+            'average_inventory': average_inventory,
+            'policy_gap': policy_gap,
+            'within_ot_limit': overtime_qty <= month_overtime_capacity + 1e-9,
+            'regular_cost': row_regular_cost,
             'overtime_cost': row_overtime_cost,
             'subcontract_cost': row_subcontract_cost,
             'inventory_cost': row_inventory_cost,
@@ -526,78 +490,24 @@ def plan_synthesis(request):
             'workforce_hire_cost': workforce_hire_cost,
             'workforce_layoff_cost': workforce_layoff_cost,
             'total_cost': row_total_cost,
-            })
+        })
+    
+    # === Calculate totals ===
+    total_regular = sum(row['regular'] for row in plan_rows)
+    total_overtime = sum(row['overtime'] for row in plan_rows)
+    total_subcontract = sum(row['subcontract'] for row in plan_rows)
+    total_inventory_cost = sum(row['inventory_cost'] for row in plan_rows)
+    total_backorder_cost = sum(row['backorder_cost'] for row in plan_rows)
+    total_regular_cost = sum(row['regular_cost'] for row in plan_rows)
+    total_overtime_cost = sum(row['overtime_cost'] for row in plan_rows)
+    total_subcontract_cost = sum(row['subcontract_cost'] for row in plan_rows)
+    total_workforce_hire_cost = sum(row['workforce_hire_cost'] for row in plan_rows)
+    total_workforce_layoff_cost = sum(row['workforce_layoff_cost'] for row in plan_rows)
+    total_cost = sum(row['total_cost'] for row in plan_rows)
 
-            running_inventory = ending_inventory
-            running_backlog = backorder_qty  # 👉 Carryover backlog sang tháng tiếp theo
-
-        # end of allocation loop for this attempt
-
-        # === Check if final period still has backlog due to carryover ===
-        # If so, need to rebalance production to earlier periods
-        last_backorder = plan_rows[-1]['backorder'] if plan_rows else 0
-        if last_backorder > 0 and attempt < max_attempts - 1:
-            # Tăng production ở các tháng trước (nhất là giữa) bằng rebalance_shortage
-            adjusted_production = rebalance_shortage(
-                demand=demand_rows,
-                production=adjusted_production,
-                regular=regular_caps,
-                alpha=alpha_ot
-            )
-            attempt += 1
-            continue
-        else:
-            # === Finished: enforce final constraints ===
-            # Nếu vẫn có backlog cuối, buộc ending = 0 bằng cách giảm nó
-            if plan_rows and running_backlog > 0:
-                # Reduce production ở tháng cuối để xóa backlog
-                last_row = plan_rows[-1]
-                excess_needed = running_backlog
-                for key in ('subcontract', 'overtime', 'regular'):
-                    if excess_needed <= 0:
-                        break
-                    reducible = min(last_row[key], excess_needed)
-                    last_row[key] -= reducible
-                    excess_needed -= reducible
-                last_row['production'] = last_row['regular'] + last_row['overtime'] + last_row['subcontract']
-                last_row['backorder'] = 0
-                last_row['ending_inventory'] = max(0, running_inventory + last_row['production'] - (demand_rows[-1] + plan_rows[-2]['backorder'] if len(plan_rows) > 1 else 0))
-                last_row['average_inventory'] = max(0.0, (last_row['beginning_inventory'] + last_row['ending_inventory']) / 2.0)
-                last_row['inventory_cost'] = last_row['average_inventory'] * inventory_cost
-                last_row['regular_cost'] = last_row['regular'] * regular_cost
-                last_row['overtime_cost'] = last_row['overtime'] * overtime_cost
-                last_row['subcontract_cost'] = last_row['subcontract'] * subcontract_cost
-                last_row['backorder_cost'] = 0
-                last_row['policy_gap'] = max(0.0, last_row['ending_inventory'] - inventory_policy)
-                last_row['total_cost'] = (
-                    last_row['regular_cost']
-                    + last_row['overtime_cost']
-                    + last_row['subcontract_cost']
-                    + last_row['inventory_cost']
-                    + last_row['backorder_cost']
-                    + last_row['workforce_hire_cost']
-                    + last_row['workforce_layoff_cost']
-                )
-
-            total_regular = sum(row['regular'] for row in plan_rows)
-            total_overtime = sum(row['overtime'] for row in plan_rows)
-            total_subcontract = sum(row['subcontract'] for row in plan_rows)
-            total_inventory_cost = sum(row['inventory_cost'] for row in plan_rows)
-            total_backorder_cost = sum(row['backorder_cost'] for row in plan_rows)
-            total_regular_cost = sum(row['regular_cost'] for row in plan_rows)
-            total_overtime_cost = sum(row['overtime_cost'] for row in plan_rows)
-            total_subcontract_cost = sum(row['subcontract_cost'] for row in plan_rows)
-            total_workforce_hire_cost = sum(row['workforce_hire_cost'] for row in plan_rows)
-            total_workforce_layoff_cost = sum(row['workforce_layoff_cost'] for row in plan_rows)
-            total_cost = sum(row['total_cost'] for row in plan_rows)
-
-            print("OT từng tháng:", [row['overtime'] for row in plan_rows])
-            print("Tổng OT:", total_overtime)
-            print("Debug OT đã clamp:", debug_overtime)
-            break
-
+    # === Build summary cards ===
     workforce_total_change = sum(workforce_adjustments)
-    workforce_end = running_workers
+    workforce_end = workers + workforce_total_change
     workforce_cost = total_workforce_hire_cost + total_workforce_layoff_cost
     workforce_action = 'Ổn định'
     if workforce_total_change > 0:
@@ -792,6 +702,7 @@ def plan_synthesis(request):
         'workforce_adjustments': workforce_adjustments,
         'feasibility_ok': feasibility_ok,
         'feasibility_message': None if feasibility_ok else '❌ KHÔNG KHẢ THI: tổng capacity hiện tại nhỏ hơn tổng demand, nên kế hoạch vẫn thiếu hàng.',
+        'error_message': None,
         'forecast_note': 'OT limit = OT_t <= alpha x regular capacity. If overtime cost is blank, overtime is disabled. If subcontract cost is blank, subcontract is disabled. Inventory policy is treated as an upper limit I_t <= I_max. Production quantities are rounded to whole units.',
         'forecast_total': round(sum(item['quantity'] for item in forecast_rows), 2),
     })
