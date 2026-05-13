@@ -114,7 +114,7 @@ def is_feasible(demand, regular, alpha):
     return True
 
 
-def optimize_aggregate_plan_lp(demand, regular_caps, cost_params, alpha=0.2):
+def optimize_aggregate_plan_lp(demand, regular_caps, cost_params, alpha=0.2, safety_stock=0):
     """
     Giải Aggregate Planning bằng Linear Programming.
     
@@ -123,10 +123,11 @@ def optimize_aggregate_plan_lp(demand, regular_caps, cost_params, alpha=0.2):
     - regular_caps: list (capacity giờ thường)
     - cost_params: dict (regular_cost, overtime_cost, subcontract_cost, inventory_cost, backorder_cost)
     - alpha: float (OT limit, e.g., 0.2 = 20%)
+    - safety_stock: float (minimum inventory level, not for final period)
     
     Returns:
     - result: list[dict] với keys: regular, overtime, subcontract, inventory, backlog cho mỗi tháng
-    - total_cost: float
+    - status hoặc total_cost
     """
     import pulp
     
@@ -134,11 +135,11 @@ def optimize_aggregate_plan_lp(demand, regular_caps, cost_params, alpha=0.2):
     model = pulp.LpProblem("Aggregate_Planning", pulp.LpMinimize)
     
     # ===== Variables =====
-    R = pulp.LpVariable.dicts("Regular", range(n), lowBound=0)  # Regular production
-    O = pulp.LpVariable.dicts("Overtime", range(n), lowBound=0)  # Overtime production
-    S = pulp.LpVariable.dicts("Subcontract", range(n), lowBound=0)  # Subcontract
-    I = pulp.LpVariable.dicts("Inventory", range(n), lowBound=0)  # Ending inventory
-    B = pulp.LpVariable.dicts("Backlog", range(n), lowBound=0)  # Backlog
+    R = pulp.LpVariable.dicts("R", range(n), lowBound=0)
+    O = pulp.LpVariable.dicts("O", range(n), lowBound=0)
+    S = pulp.LpVariable.dicts("S", range(n), lowBound=0)
+    I = pulp.LpVariable.dicts("I", range(n), lowBound=0)
+    B = pulp.LpVariable.dicts("B", range(n), lowBound=0)
     
     # ===== Objective: Minimize total cost =====
     model += pulp.lpSum(
@@ -154,10 +155,8 @@ def optimize_aggregate_plan_lp(demand, regular_caps, cost_params, alpha=0.2):
     for t in range(n):
         # Inventory balance equation
         if t == 0:
-            # Beginning inventory = 0, so: Production - Demand = Ending Inventory - Backlog
             model += R[t] + O[t] + S[t] == demand[t] + I[t] - B[t]
         else:
-            # Previous ending inventory + Production = Demand + Previous backlog + Current ending inventory
             model += I[t-1] + R[t] + O[t] + S[t] == demand[t] + B[t-1] + I[t]
         
         # Capacity constraints
@@ -169,9 +168,13 @@ def optimize_aggregate_plan_lp(demand, regular_caps, cost_params, alpha=0.2):
         else:
             model += O[t] == 0
         
-        # Subcontract capacity (unlimited)
+        # Subcontract capacity
         if cost_params['subcontract_cost'] <= 0:
             model += S[t] == 0
+        
+        # Safety stock constraint (not for final period)
+        if safety_stock > 0 and t < n - 1:
+            model += I[t] >= safety_stock
     
     # Final constraint: Ending inventory = 0, No backlog in final period
     model += I[n-1] == 0
@@ -201,7 +204,7 @@ def optimize_aggregate_plan_lp(demand, regular_caps, cost_params, alpha=0.2):
     return result, total_cost
 
 
-def find_best_ot_alpha(demand_rows, regular_caps, cost_params):
+def find_best_ot_alpha(demand_rows, regular_caps, cost_params, safety_stock=0):
     """
     Tìm OT limit tối ưu (0-50%) với min total cost.
     Chạy LP mỗi lần thử alpha để tìm min cost solution.
@@ -210,6 +213,7 @@ def find_best_ot_alpha(demand_rows, regular_caps, cost_params):
     - demand_rows: list (nhu cầu mỗi tháng)
     - regular_caps: list (capacity giờ thường mỗi tháng)
     - cost_params: dict (regular_cost, overtime_cost, subcontract_cost, inventory_cost, backorder_cost)
+    - safety_stock: float (minimum inventory level)
     
     Returns:
     - best_alpha: float (% OT tối ưu, từ 0 đến 0.5)
@@ -223,7 +227,7 @@ def find_best_ot_alpha(demand_rows, regular_caps, cost_params):
         alpha = alpha_pct / 100.0
         
         # Chạy LP với alpha này
-        result, total_cost = optimize_aggregate_plan_lp(demand_rows, regular_caps, cost_params, alpha=alpha)
+        result, total_cost = optimize_aggregate_plan_lp(demand_rows, regular_caps, cost_params, alpha=alpha, safety_stock=safety_stock)
         
         # Nếu không có feasible solution, skip
         if result is None:
@@ -308,6 +312,7 @@ def plan_synthesis(request):
         'inventory_policy': 0,
         'hire_cost': 0,
         'layoff_cost': 0,
+        'safety_stock': 0,
     }
 
     workforce_adjustments = [0 for _ in forecast_rows]
@@ -334,6 +339,7 @@ def plan_synthesis(request):
     inventory_policy = max(0.0, float(defaults['inventory_policy']))
     hire_cost = float(defaults['hire_cost'])
     layoff_cost = float(defaults['layoff_cost'])
+    safety_stock = max(0.0, float(defaults['safety_stock']))
     
     # Debug: log parameter values
     import sys
@@ -376,7 +382,7 @@ def plan_synthesis(request):
     
     # Nếu ot_limit_pct = 0 → tìm optimal alpha
     if ot_limit_pct <= 0:
-        alpha_ot, _ = find_best_ot_alpha(demand_rows, regular_caps, cost_params)
+        alpha_ot, _ = find_best_ot_alpha(demand_rows, regular_caps, cost_params, safety_stock=safety_stock)
         ot_limit_pct = alpha_ot * 100.0
         # Recalculate OT capacity với alpha tối ưu
         for idx in range(len(demand_rows)):
@@ -385,7 +391,7 @@ def plan_synthesis(request):
             overtime_caps[idx] = month_overtime_capacity
     
     # === Run LP optimization ===
-    lp_result, status_or_cost = optimize_aggregate_plan_lp(demand_rows, regular_caps, cost_params, alpha=alpha_ot)
+    lp_result, status_or_cost = optimize_aggregate_plan_lp(demand_rows, regular_caps, cost_params, alpha=alpha_ot, safety_stock=safety_stock)
     
     # Initialize totals (before checking feasibility)
     total_regular = 0.0
@@ -695,6 +701,7 @@ def plan_synthesis(request):
         'inventory_policy': inventory_policy,
         'hire_cost': hire_cost,
         'layoff_cost': layoff_cost,
+        'safety_stock': safety_stock,
         'workforce_action': workforce_action,
         'workforce_cost': workforce_cost,
         'workforce_total_change': workforce_total_change,

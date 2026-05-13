@@ -320,9 +320,9 @@
         <label>Layoff cost / worker</label>
         <input type="number" step="0.01" name="layoff_cost" value="{{ layoff_cost|stringformat:'g' }}">
       </div>
-      <div class="plan-field note">
-        <label>Ghi chú Constraint</label>
-        <input type="text" value="OT limit = OT_t <= alpha x regular capacity; Inventory policy = I_t <= I_max; dòng Tuyển dụng/Sa thải trong bảng được nhập dấu +/- theo từng tháng." readonly>
+      <div class="plan-field">
+        <label>Safety Stock</label>
+        <input type="number" step="1" name="safety_stock" value="{{ safety_stock|default:0|stringformat:'g' }}">
       </div>
       <div class="plan-field full">
         <div class="plan-actions">
