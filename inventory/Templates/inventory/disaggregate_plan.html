@@ -262,34 +262,6 @@
     </ul>
   </div>
 
-  {% if plan_data %}
-  <div class="disagg-panel">
-    <h2>Kiểm tra nhanh theo tháng</h2>
-    <div class="matrix-wrap">
-      <table class="summary-table">
-        <thead>
-          <tr>
-            <th>Tháng</th>
-            <th>Dự báo tổng</th>
-            <th>Đã phân rã</th>
-            <th>Chênh lệch</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in plan_data %}
-          <tr>
-            <th>{{ row.month_label }}</th>
-            <td>{{ row.total_forecast|floatformat:0 }}</td>
-            <td>{{ row.allocated_total|floatformat:0 }}</td>
-            <td class="{% if row.gap|floatformat:0 == '0' %}ok{% else %}warn{% endif %}">{{ row.gap|floatformat:0 }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% endif %}
-
   <div class="disagg-panel">
     <form method="post">
       {% csrf_token %}
@@ -378,5 +350,33 @@
       </div>
     </form>
   </div>
+
+  {% if plan_data %}
+  <div class="disagg-panel">
+    <h2>Kiểm tra nhanh theo tháng</h2>
+    <div class="matrix-wrap">
+      <table class="summary-table">
+        <thead>
+          <tr>
+            <th>Tháng</th>
+            <th>Dự báo tổng</th>
+            <th>Đã phân rã</th>
+            <th>Chênh lệch</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in plan_data %}
+          <tr>
+            <th>{{ row.month_label }}</th>
+            <td>{{ row.total_forecast|floatformat:0 }}</td>
+            <td>{{ row.allocated_total|floatformat:0 }}</td>
+            <td class="{% if row.gap|floatformat:0 == '0' %}ok{% else %}warn{% endif %}">{{ row.gap|floatformat:0 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
