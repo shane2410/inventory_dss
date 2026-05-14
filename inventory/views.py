@@ -818,10 +818,12 @@ def product_decomposition(request):
     for month in months:
         q_filter |= Q(month__year=month.year, month__month=month.month)
     ratio_qs = ProductRatio.objects.filter(q_filter)
-    ratio_map = {
-        (ratio.product_code, ratio.month.strftime('%Y_%m')): ratio
-        for ratio in ratio_qs
-    }
+    
+    # Build ratio_map with string keys (product_code_YYYY_MM) and ratio values
+    ratio_map = {}
+    for ratio in ratio_qs:
+        key = f'{ratio.product_code}_{ratio.month.strftime("%Y_%m")}'
+        ratio_map[key] = ratio.ratio
 
     existing_product_codes = []
     for ratio in ProductRatio.objects.values('product_code', 'product_name').order_by('product_code').distinct():
@@ -927,9 +929,9 @@ def product_decomposition(request):
         cells = []
         for month in months:
             month_key = month.strftime('%Y_%m')
-            ratio_obj = ratio_map.get((row_source['product_code'], month_key))
-            ratio_value = float(ratio_obj.ratio) if ratio_obj else 0.0
-            qty_value = float(ratio_obj.forecast_qty) if ratio_obj else round(forecast_map[month_key] * ratio_value, 2)
+            ratio_key = f"{row_source['product_code']}_{month_key}"
+            ratio_value = float(ratio_map.get(ratio_key) or 0.0)
+            qty_value = round(forecast_map[month_key] * ratio_value, 2)
 
             allocated_totals[month_key] += qty_value
             cells.append({
@@ -1007,6 +1009,7 @@ def product_decomposition(request):
         'plan_rows': plan_rows,
         'summary_rows': summary_rows,
         'forecast_map': forecast_map,
+        'ratio_map': ratio_map,
         'plan_data': plan_data,
         'saved_product_count': len(existing_product_codes),
     }
