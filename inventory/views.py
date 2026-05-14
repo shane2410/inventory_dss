@@ -937,6 +937,7 @@ def product_decomposition(request):
             cells.append({
                 'month_key': month_key,
                 'ratio': ratio_value,
+                'ratio_display': f'{ratio_value:.2f}',
                 'qty': qty_value,
             })
 
