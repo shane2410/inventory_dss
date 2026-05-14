@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from collections import defaultdict
-from inventory.models import SalesData, BOM, Material, Product
+from inventory.models import SalesData, BOM, Material, Product, ProductRatio
 
 
 # =========================
@@ -338,6 +338,44 @@ def forecast_monthly_total(history_qs=None):
         mae = rmse = mape = 0
 
     return mean, std, forecast_list, mae, rmse, mape
+
+
+def disaggregate_forecast(forecast_list, start_month='2025-05-01', ratio_qs=None):
+    """Split monthly forecast totals into product-level forecasts using stored ratios."""
+    if ratio_qs is None:
+        ratio_qs = ProductRatio.objects.all()
+
+    start_month = pd.Timestamp(start_month).to_period('M').to_timestamp()
+    result = []
+
+    for index, total_qty in enumerate(forecast_list):
+        current_month = (start_month + pd.DateOffset(months=index)).to_period('M').to_timestamp()
+        month_ratios = ratio_qs.filter(month=current_month).order_by('product_code', 'product_name', 'id')
+
+        month_rows = []
+        allocated_total = 0.0
+        total_qty_value = float(total_qty or 0)
+
+        for ratio_obj in month_ratios:
+            forecast_qty = round(total_qty_value * float(ratio_obj.ratio or 0), 2)
+            month_rows.append({
+                'product_id': ratio_obj.product_code,
+                'product_name': ratio_obj.product_name,
+                'ratio': float(ratio_obj.ratio or 0),
+                'forecast_qty': forecast_qty,
+            })
+            allocated_total += forecast_qty
+
+        result.append({
+            'month': current_month,
+            'month_label': current_month.strftime('%m/%Y'),
+            'total_forecast': round(total_qty_value, 2),
+            'allocated_total': round(allocated_total, 2),
+            'gap': round(total_qty_value - allocated_total, 2),
+            'details': month_rows,
+        })
+
+    return result
 
 # =========================
 # =========================

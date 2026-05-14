@@ -50,7 +50,6 @@ class TransactionForm(forms.ModelForm):
             'date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
         }
 
-
 class MultiLevelBOMEntryForm(forms.Form):
     NODE_TYPE_CHOICES = (
         ("PRODUCT", "Product"),

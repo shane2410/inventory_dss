@@ -36,6 +36,21 @@ class Product(models.Model):
         return self.name
 
 
+class ProductRatio(models.Model):
+    product_code = models.CharField(max_length=50, db_index=True, default='', blank=True)
+    product_name = models.CharField(max_length=255, default='', blank=True)
+    month = models.DateField(db_index=True)
+    ratio = models.FloatField(default=0)
+    forecast_qty = models.FloatField(default=0)
+
+    class Meta:
+        unique_together = ('product_code', 'month')
+        ordering = ['month', 'product_code']
+
+    def __str__(self):
+        return f"{self.product_code} - {self.product_name} - {self.month:%m/%Y}"
+
+
 # =========================
 # BOM (Bill of Materials)
 # =========================

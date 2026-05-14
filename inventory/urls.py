@@ -56,6 +56,7 @@ urlpatterns = [
     path('planning/plan-synthesis/', plan_synthesis, name='plan-synthesis'),
     path('planning/save-config/', save_planning_config, name='save-planning-config'),
     path('planning/product-decomposition/', product_decomposition, name='product-decomposition'),
+    path('planning/disaggregate-plan/', product_decomposition, name='disaggregate_plan'),
     path('planning/mps/', mps, name='mps'),
     path('planning/mrp/', mrp, name='mrp'),
     path('system/', system_settings, name='system-settings'),

@@ -1,14 +1,17 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from functools import wraps
 from django.contrib.auth import authenticate, login, logout, get_user_model
+from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Sum
 import math
+import re
 import numpy as np
+import pandas as pd
 from openpyxl import Workbook, load_workbook
-from .models import Product, Material, SalesData, Transaction, BOM
+from .models import Product, Material, SalesData, Transaction, BOM, ProductRatio
 from .forms import ImportDataForm, MonthlyForecastImportForm
-from .services import aggregate_material_demand, abc_classification, forecast_monthly_total, forecast_product, forecast_product_monthly, run_dss
+from .services import aggregate_material_demand, abc_classification, disaggregate_forecast, forecast_monthly_total, forecast_product, forecast_product_monthly, run_dss
 from .recommendations import build_dashboard_recommendations, build_inventory_alert_recommendations, build_inventory_watchlist_recommendations
 from datetime import datetime, timedelta, date
 from .permissions import (
@@ -800,10 +803,209 @@ def save_planning_config(request):
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def product_decomposition(request):
-    return render(request, 'inventory/placeholder.html', {
-        'title': 'Phân rã sản phẩm',
-        'message': 'Trang Phân rã sản phẩm đang được xây dựng.'
-    })
+    start_month = '2025-05-01'
+    forecast_mean, forecast_std, forecast_list, mae, rmse, mape = forecast_monthly_total()
+    months = list(pd.date_range(start=start_month, periods=len(forecast_list), freq='MS'))
+
+    forecast_map = {
+        month.strftime('%Y_%m'): float(forecast_list[index] or 0)
+        for index, month in enumerate(months)
+    }
+
+    ratio_qs = ProductRatio.objects.filter(month__in=months)
+    ratio_map = {
+        (ratio.product_code, ratio.month.strftime('%Y_%m')): ratio
+        for ratio in ratio_qs
+    }
+
+    existing_product_codes = []
+    for ratio in ProductRatio.objects.values('product_code', 'product_name').order_by('product_code').distinct():
+        existing_product_codes.append({
+            'product_code': ratio['product_code'],
+            'product_name': ratio['product_name'],
+        })
+
+    if not existing_product_codes:
+        existing_product_codes = [
+            {'product_code': '', 'product_name': ''},
+            {'product_code': '', 'product_name': ''},
+            {'product_code': '', 'product_name': ''},
+        ]
+
+    row_indices = list(range(len(existing_product_codes)))
+
+    if request.method == 'POST':
+        month_warnings = []
+
+        posted_indices = set()
+        for key in request.POST.keys():
+            match = re.match(r'^product_code_(\d+)$', key)
+            if match:
+                posted_indices.add(int(match.group(1)))
+
+        for row_index in sorted(posted_indices):
+            original_code = (request.POST.get(f'original_code_{row_index}') or '').strip()
+            product_code = (request.POST.get(f'product_code_{row_index}') or '').strip()
+            product_name = (request.POST.get(f'product_name_{row_index}') or '').strip()
+
+            row_has_values = bool(product_code or product_name)
+            month_ratio_inputs = {}
+            for month in months:
+                month_key = month.strftime('%Y_%m')
+                raw_ratio = (request.POST.get(f'ratio_{row_index}_{month_key}') or '').strip()
+                month_ratio_inputs[month_key] = raw_ratio
+                if raw_ratio:
+                    row_has_values = True
+
+            if original_code and not product_code:
+                ProductRatio.objects.filter(product_code=original_code, month__in=months).delete()
+                continue
+
+            if not row_has_values:
+                continue
+
+            if not product_code:
+                month_warnings.append(f'Hàng {row_index + 1}: cần nhập ID_P')
+                continue
+
+            if not product_name:
+                product_name = product_code
+
+            if original_code and original_code != product_code:
+                ProductRatio.objects.filter(product_code=original_code, month__in=months).delete()
+
+            month_ratio_total = 0.0
+            for month in months:
+                month_key = month.strftime('%Y_%m')
+                total_forecast = forecast_map[month_key]
+                raw_ratio = month_ratio_inputs[month_key]
+
+                try:
+                    ratio = float(raw_ratio) if raw_ratio else 0.0
+                except (TypeError, ValueError):
+                    ratio = 0.0
+
+                if ratio < 0:
+                    ratio = 0.0
+                if ratio > 1:
+                    ratio = 1.0
+
+                forecast_qty = round(total_forecast * ratio, 2)
+                ProductRatio.objects.update_or_create(
+                    product_code=product_code,
+                    month=month,
+                    defaults={
+                        'product_name': product_name,
+                        'ratio': ratio,
+                        'forecast_qty': forecast_qty,
+                    }
+                )
+                month_ratio_total += ratio
+
+            if not math.isclose(month_ratio_total, 1.0, abs_tol=0.05):
+                month_warnings.append(f'{product_code}: tổng ratio = {month_ratio_total:.2f}')
+
+        if month_warnings:
+            messages.warning(
+                request,
+                'Đã lưu kế hoạch phân rã, nhưng một số tháng chưa có tổng ratio bằng 1.00: ' + '; '.join(month_warnings)
+            )
+        else:
+            messages.success(request, 'Lưu kế hoạch phân rã thành công')
+
+        return redirect('product-decomposition')
+
+    plan_rows = []
+    allocated_totals = {month.strftime('%Y_%m'): 0.0 for month in months}
+
+    for row_index, row_source in enumerate(existing_product_codes):
+        cells = []
+        for month in months:
+            month_key = month.strftime('%Y_%m')
+            ratio_obj = ratio_map.get((row_source['product_code'], month_key))
+            ratio_value = float(ratio_obj.ratio) if ratio_obj else 0.0
+            qty_value = float(ratio_obj.forecast_qty) if ratio_obj else round(forecast_map[month_key] * ratio_value, 2)
+
+            allocated_totals[month_key] += qty_value
+            cells.append({
+                'month_key': month_key,
+                'ratio': ratio_value,
+                'qty': qty_value,
+            })
+
+        plan_rows.append({
+            'row_index': row_index,
+            'product_code': row_source['product_code'],
+            'product_name': row_source['product_name'],
+            'cells': cells,
+        })
+
+    if existing_product_codes:
+        blank_row_index = len(plan_rows)
+        plan_rows.append({
+            'row_index': blank_row_index,
+            'product_code': '',
+            'product_name': '',
+            'cells': [
+                {
+                    'month_key': month.strftime('%Y_%m'),
+                    'ratio': 0.0,
+                    'qty': 0.0,
+                }
+                for month in months
+            ],
+        })
+
+    if not plan_rows:
+        for row_index in range(8):
+            plan_rows.append({
+                'row_index': row_index,
+                'product_code': '',
+                'product_name': '',
+                'cells': [
+                    {'month_key': month.strftime('%Y_%m'), 'ratio': 0.0, 'qty': 0.0}
+                    for month in months
+                ],
+            })
+
+    summary_rows = []
+    for month in months:
+        month_key = month.strftime('%Y_%m')
+        total_forecast = forecast_map[month_key]
+        allocated_total = round(allocated_totals[month_key], 2)
+        summary_rows.append({
+            'month': month,
+            'month_key': month_key,
+            'total_forecast': total_forecast,
+            'allocated_total': allocated_total,
+            'gap': round(total_forecast - allocated_total, 2),
+            'gap_is_zero': math.isclose(total_forecast, allocated_total, abs_tol=0.5),
+        })
+
+    plan_data = disaggregate_forecast(
+        forecast_list=forecast_list,
+        start_month=start_month,
+        ratio_qs=ratio_qs,
+    )
+
+    forecast_total = round(sum(float(value or 0) for value in forecast_list), 2)
+
+    context = {
+        'forecast_mean': forecast_mean,
+        'forecast_std': forecast_std,
+        'forecast_list': forecast_list,
+        'forecast_total': forecast_total,
+        'mae': mae,
+        'rmse': rmse,
+        'mape': mape,
+        'months': months,
+        'plan_rows': plan_rows,
+        'summary_rows': summary_rows,
+        'forecast_map': forecast_map,
+        'plan_data': plan_data,
+        'saved_product_count': len(existing_product_codes),
+    }
+    return render(request, 'inventory/disaggregate_plan.html', context)
 
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
