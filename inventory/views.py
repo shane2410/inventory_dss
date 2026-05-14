@@ -812,7 +812,12 @@ def product_decomposition(request):
         for index, month in enumerate(months)
     }
 
-    ratio_qs = ProductRatio.objects.filter(month__in=months)
+    # Filter by year+month instead of exact date to catch all records in each month
+    from django.db.models import Q
+    q_filter = Q()
+    for month in months:
+        q_filter |= Q(month__year=month.year, month__month=month.month)
+    ratio_qs = ProductRatio.objects.filter(q_filter)
     ratio_map = {
         (ratio.product_code, ratio.month.strftime('%Y_%m')): ratio
         for ratio in ratio_qs
