@@ -21,6 +21,8 @@ from .views import (
     recommendation_excel_api,
     delete_sale,
     delete_transaction,
+    transaction_list,
+    transaction_create,
     import_data,
     import_data_planning,
     multilevel_bom_import,
@@ -37,6 +39,7 @@ from .views import (
 urlpatterns = [
     path('', login_view, name='login'),
     path('logout/', logout_view, name='logout'),
+    path('Quit', logout_view, name='quit-legacy'),
     path('dashboard/', dashboard, name='dashboard'),
     path('dashboard/recommendations/', recommendation_api, name='recommendation-api'),
     path('dashboard/recommendations/excel/', recommendation_excel_api, name='recommendation-excel-api'),
@@ -65,6 +68,8 @@ urlpatterns = [
     path('access-control/', access_control, name='access-control'),
     path('delete-sale/<int:id>/', delete_sale, name='delete_sale'),
     path('delete-transaction/<int:id>/', delete_transaction, name='delete_transaction'),
+    path('transactions/', transaction_list, name='transaction-list'),
+    path('transactions/create/', transaction_create, name='transaction-create'),
     
     # MongoDB API endpoints
     path('api/mongodb/materials/', api_mongodb_materials, name='api-mongodb-materials'),

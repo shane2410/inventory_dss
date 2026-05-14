@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from openpyxl import Workbook, load_workbook
 from .models import Product, Material, SalesData, Transaction, BOM, ProductRatio
-from .forms import ImportDataForm, MonthlyForecastImportForm
+from .forms import ImportDataForm, MonthlyForecastImportForm, TransactionForm
 from .services import aggregate_material_demand, abc_classification, disaggregate_forecast, forecast_monthly_total, forecast_product, forecast_product_monthly, run_dss
 from .recommendations import build_dashboard_recommendations, build_inventory_alert_recommendations, build_inventory_watchlist_recommendations
 from datetime import datetime, timedelta, date
@@ -1441,6 +1441,34 @@ def delete_transaction(request, id):
     t = get_object_or_404(Transaction, id=id)
     t.delete()
     return redirect('dashboard')
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def transaction_list(request):
+    transactions = Transaction.objects.select_related('material').order_by('-date', '-id')
+    return render(request, 'inventory/transaction_list.html', {
+        'transactions': transactions,
+    })
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def transaction_create(request):
+    materials = Material.objects.all().order_by('name')
+
+    if request.method == 'POST':
+        form = TransactionForm(request.POST)
+        if form.is_valid():
+            transaction = form.save(commit=False)
+            transaction.source = Transaction.SOURCE_OPERATIONS
+            transaction.save()
+            return redirect('transaction-list')
+    else:
+        form = TransactionForm()
+
+    return render(request, 'inventory/transaction_form.html', {
+        'form': form,
+        'materials': materials,
+    })
 
 
 # =========================
