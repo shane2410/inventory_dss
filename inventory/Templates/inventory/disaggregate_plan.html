@@ -295,7 +295,6 @@
       <input type="hidden" name="plan_row_count" value="{{ plan_rows|length }}">
       <div class="plan-actions" style="margin-bottom:14px;">
         <button type="submit" class="btn-save">Lưu kế hoạch phân rã</button>
-        <a href="{% url 'forecast_monthly' %}" class="btn-secondary-link">Xem dự báo tổng</a>
       </div>
 
       <div class="matrix-wrap">
@@ -345,7 +344,7 @@
                   min="0"
                   max="1"
                   name="ratio_{{ row.row_index }}_{{ cell.month_key }}"
-                  value="{{ cell.ratio|floatformat:4 }}"
+                  value="{% if cell.ratio > 0 %}{{ cell.ratio|floatformat:2 }}{% endif %}"
                 >
               </td>
               <td>{{ cell.qty|floatformat:0 }}</td>
