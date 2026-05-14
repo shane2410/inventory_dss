@@ -344,7 +344,7 @@
                   min="0"
                   max="1"
                   name="ratio_{{ row.row_index }}_{{ cell.month_key }}"
-                  value="{% if cell.ratio > 0 %}{{ cell.ratio|floatformat:2 }}{% endif %}"
+                  value="{{ cell.ratio|floatformat:2 }}"
                 >
               </td>
               <td>{{ cell.qty|floatformat:0 }}</td>
