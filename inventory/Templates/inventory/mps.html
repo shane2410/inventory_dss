@@ -3,48 +3,56 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid" style="padding: 20px;">
-    <h1>{{ title }}</h1>
-    
-    <div class="card" style="margin-bottom: 20px;">
-        <div class="card-header bg-primary text-white">
-            <h5 class="mb-0">Thiết lập tham số và chọn sản phẩm</h5>
-        </div>
-        <div class="card-body">
-            <form id="mps-form" class="row g-3">
+<div class="container-fluid" style="padding: 0;">
+    <div class="mps-hero">
+        <h1>{{ title }}</h1>
+        <p>Lập kế hoạch sản xuất chính (MPS) sử dụng phương pháp PPA (Part Period Algorithm) - Xác định kích cỡ lô sản xuất/đặt hàng tối ưu trong MPS nhằm cân bằng giữa chi phí thiết lập (C) và chi phí lưu kho (H).</p>
+    </div>
+
+    <div style="padding: 22px 4px;">
+    <div class="mps-top-layout" style="margin-bottom: 20px;">
+        <div class="mps-top-left">
+            <div class="card mps-main-card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Thiết lập tham số và chọn sản phẩm</h5>
+                </div>
+                <div class="card-body">
+                    <form id="mps-form" class="mps-form-layout">
                 {% csrf_token %}
                 
-                <!-- Chọn sản phẩm -->
-                <div class="col-md-3">
-                    <label for="product_code" class="form-label">Sản phẩm Planning <span class="text-danger">*</span></label>
-                    <select id="product_code" name="product_code" class="form-control" required>
-                        <option value="">-- Chọn sản phẩm Planning --</option>
-                        {% for product in products %}
-                            <option value="{{ product.product_code }}">{{ product.product_name }} ({{ product.product_code }})</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                
-                <!-- Chi phí thiết lập (C) -->
-                <div class="col-md-3">
-                    <label for="setup_cost" class="form-label">Chi phí thiết lập (C) - VNĐ/lần <span class="text-danger">*</span></label>
-                    <input type="number" id="setup_cost" name="setup_cost" class="form-control" step="1000000" min="0" required>
-                </div>
-                
-                <!-- Chi phí lưu kho (H) -->
-                <div class="col-md-3">
-                    <label for="holding_cost" class="form-label">Chi phí lưu kho (H) - VNĐ/sản phẩm/kỳ <span class="text-danger">*</span></label>
-                    <input type="number" id="holding_cost" name="holding_cost" class="form-control" step="10" min="0" required>
-                </div>
-                
-                <!-- Tồn kho ban đầu -->
-                <div class="col-md-3">
-                    <label for="begin_inventory" class="form-label">Tồn kho ban đầu - Đơn vị</label>
-                    <input type="number" id="begin_inventory" name="begin_inventory" class="form-control" step="1" min="0">
+                <div class="mps-param-grid">
+                    <!-- Chọn sản phẩm -->
+                    <div class="param-cell">
+                        <label for="product_code" class="form-label">Sản phẩm Planning <span class="text-danger">*</span></label>
+                        <select id="product_code" name="product_code" class="form-control" required>
+                            <option value="">-- Chọn sản phẩm Planning --</option>
+                            {% for product in products %}
+                                <option value="{{ product.product_code }}">{{ product.product_name }} ({{ product.product_code }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Chi phí thiết lập (C) -->
+                    <div class="param-cell">
+                        <label for="setup_cost" class="form-label">Chi phí thiết lập (C) - VNĐ/lần <span class="text-danger">*</span></label>
+                        <input type="number" id="setup_cost" name="setup_cost" class="form-control" step="1000000" min="0" required>
+                    </div>
+
+                    <!-- Chi phí lưu kho (H) -->
+                    <div class="param-cell">
+                        <label for="holding_cost" class="form-label">Chi phí lưu kho (H) - VNĐ/sản phẩm/kỳ <span class="text-danger">*</span></label>
+                        <input type="number" id="holding_cost" name="holding_cost" class="form-control" step="10" min="0" required>
+                    </div>
+
+                    <!-- Tồn kho ban đầu -->
+                    <div class="param-cell">
+                        <label for="begin_inventory" class="form-label">Tồn kho ban đầu - Đơn vị</label>
+                        <input type="number" id="begin_inventory" name="begin_inventory" class="form-control" step="1" min="0">
+                    </div>
                 </div>
 
                 <!-- Đơn hàng khách hàng theo kỳ -->
-                <div class="col-md-12">
+                <div>
                     <label class="form-label">Đơn hàng khách hàng theo tháng/kỳ</label>
                     <div class="order-grid">
                         <div class="order-cell">
@@ -100,85 +108,357 @@
                 </div>
                 
                 <!-- Nút tính toán -->
-                <div class="col-md-12">
-                    <button type="button" id="run-mps-btn" class="btn btn-success btn-lg">
-                        <i class="fas fa-calculator"></i> Tính toán MPS
+                <div class="mps-form-actions">
+                    <button type="button" id="run-mps-btn" class="btn btn-lg">
+                        Tính toán MPS
                     </button>
                     <span id="loading-spinner" style="display: none;">
                         <span class="spinner-border spinner-border-sm ms-2" role="status" aria-hidden="true"></span>
                         Đang xử lý...
                     </span>
                 </div>
-            </form>
+
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="mps-top-right">
+            <!-- Bảng PPA Analysis (Chi tiết phân tích lô) -->
+            <div id="ppa-table-wrapper" class="card ppa-panel ppa-collapsed">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0 ppa-title">Phân tích PPA - Chi tiết xác định kích cỡ lô</h5>
+                </div>
+                <div class="card-body">
+                    <div id="ppa-table-container" style="display: none; overflow-x: auto;">
+                        <table class="table table-bordered table-hover table-sm ppa-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="text-center">k</th>
+                                    <th class="text-center">i</th>
+                                    <th class="text-center">Ri</th>
+                                    <th class="text-center">(i-1)Ri</th>
+                                    <th class="text-center">APP(T)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ppa-tbody">
+                                <!-- Dữ liệu sẽ được thêm bằng JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <p id="ppa-explanation" class="text-muted mt-3 mb-0 small ppa-explanation-text">
+                        <strong>Giải thích:</strong> APP(T) được cộng dồn theo công thức APP(T) = APP(T-1) + (i-1)Ri cho từng dòng chi tiết PPA.
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
     
-    <!-- Kết quả EPP -->
-    <div id="epp-result" class="card" style="margin-bottom: 20px; display: none;">
-        <div class="card-header bg-info text-white">
-            <h5 class="mb-0">Chỉ số EPP (Economic Part Period)</h5>
-        </div>
-        <div class="card-body">
-            <p class="lead">EPP = <strong id="epp-value">0</strong> kỳ</p>
-            <p class="text-muted">EPP = C / H = Chi phí thiết lập / Chi phí lưu kho</p>
-        </div>
-    </div>
-    
-    <!-- Bảng MPS -->
-    <div id="mps-table-wrapper" style="display: none;">
-        <div class="card">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0">Lập kế hoạch sản xuất chính (MPS)</h5>
+    <!-- Wrapper cho EPP và MPS Results -->
+    <div id="mps-results-wrapper" class="mps-results-container">
+        <!-- Kết quả EPP -->
+        <div id="epp-result" class="card epp-card-inner" style="margin-bottom: 0; display: none;">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0 section-title-lg">Chỉ số EPP (Economic Part Period)</h5>
             </div>
             <div class="card-body">
-                <div style="overflow-x: auto;">
-                    <table class="table table-bordered table-hover table-sm">
-                        <tbody id="mps-tbody" class="mps-transposed-table">
-                            <!-- Dữ liệu sẽ được thêm bằng JavaScript -->
-                        </tbody>
-                    </table>
+                <p class="lead">EPP = <strong id="epp-value">0</strong> kỳ</p>
+            </div>
+        </div>
+        
+        <!-- Bảng MPS -->
+        <div id="mps-table-wrapper" class="mps-table-inner" style="display: none;">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0 section-title-lg">Lập kế hoạch sản xuất chính (MPS)</h5>
+                </div>
+                <div class="card-body">
+                    <div style="overflow-x: auto;">
+                        <table class="table table-bordered table-hover table-sm">
+                            <tbody id="mps-tbody" class="mps-transposed-table">
+                                <!-- Dữ liệu sẽ được thêm bằng JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Bảng PPA Analysis (Chi tiết phân tích lô) -->
-    <div id="ppa-table-wrapper" style="display: none; margin-top: 20px;">
-        <div class="card">
-            <div class="card-header bg-warning text-dark">
-                <h5 class="mb-0">Phân tích PPA - Chi tiết xác định kích cỡ lô</h5>
-            </div>
-            <div class="card-body">
-                <div style="overflow-x: auto;">
-                    <table class="table table-bordered table-hover table-sm">
-                        <thead class="table-light">
-                            <tr>
-                                <th class="text-center">k</th>
-                                <th class="text-center">i</th>
-                                <th class="text-center">Ri</th>
-                                <th class="text-center">(i-1)Ri</th>
-                                <th class="text-center">APP(T)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="ppa-tbody">
-                            <!-- Dữ liệu sẽ được thêm bằng JavaScript -->
-                        </tbody>
-                    </table>
-                </div>
-                <p class="text-muted mt-3 small">
-                    <strong>Giải thích:</strong> APP(T) được cộng dồn theo công thức APP(T) = APP(T-1) + (i-1)Ri cho từng dòng chi tiết PPA.
-                </p>
-            </div>
-        </div>
-    </div>
-    
     <!-- Thông báo lỗi -->
     <div id="error-alert" class="alert alert-danger" style="display: none; margin-top: 20px;" role="alert">
         <strong>Lỗi:</strong> <span id="error-message"></span>
     </div>
+    </div>
 </div>
 
 <style>
+    .mps-hero {
+        padding: 22px 24px;
+        border-radius: 22px;
+        background: linear-gradient(135deg, #173b4d 0%, #2d6178 52%, #4e8ca1 100%);
+        color: #fff;
+        box-shadow: 0 16px 36px rgba(16, 33, 45, 0.16);
+        margin-bottom: 20px;
+    }
+
+    .mps-hero h1 {
+        margin: 0 0 8px;
+        font-size: 30px;
+        line-height: 1.1;
+        font-weight: 800;
+        color: #fff;
+    }
+
+    .mps-hero p {
+        margin: 0;
+        max-width: 990px;
+        color: rgba(255, 255, 255, 0.9);
+        line-height: 1.7;
+        font-size: 15px;
+    }
+
+    .container-fluid > h1 {
+        font-size: 2rem;
+        font-weight: 800;
+        color: #223548;
+        margin-bottom: 18px;
+    }
+
+    .mps-top-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.28fr) minmax(320px, 0.72fr);
+        gap: 18px;
+        align-items: start;
+    }
+
+    .mps-top-layout.ppa-open {
+        grid-template-columns: minmax(0, 0.95fr) minmax(420px, 1.05fr);
+    }
+
+    .mps-top-left,
+    .mps-top-right {
+        min-width: 0;
+    }
+
+    .mps-main-card {
+        border: 1px solid #d6e0ea;
+        border-radius: 20px;
+        box-shadow: 0 8px 24px rgba(28, 52, 84, 0.08);
+        overflow: hidden;
+        margin-bottom: 0;
+    }
+
+    .mps-main-card .card-header {
+        padding: 0px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .mps-main-card .card-header h5 {
+        font-size: 1.02rem;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+    }
+
+    .mps-main-card .card-body {
+        padding: 2px 18px 15px;
+        background: #f8fbff;
+    }
+
+    .mps-form-layout {
+        display: grid;
+        gap: 14px;
+    }
+
+    .mps-param-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(220px, 1fr));
+        gap: 12px;
+    }
+
+    .param-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 8px 10px 10px;
+        border: 1px solid #dbe5ef;
+        border-radius: 12px;
+        background: #ffffff;
+    }
+
+    #mps-form .form-label {
+        font-size: 0.92rem;
+        font-weight: 700;
+        color: #2a3f55;
+        margin-bottom: 6px;
+    }
+
+    #mps-form .form-control,
+    #mps-form .form-select {
+        width: 100%;
+        border: 1px solid #c7d5e4;
+        border-radius: 10px;
+        min-height: 38px;
+        font-size: 0.92rem;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        background-color: #ffffff;
+    }
+
+    #mps-form .form-control:focus,
+    #mps-form .form-select:focus {
+        border-color: #6aa4d8;
+        box-shadow: 0 0 0 0.2rem rgba(53, 125, 198, 0.18);
+    }
+
+    #mps-form .order-grid {
+        margin-top: 2px;
+        gap: 10px;
+        padding: 6px 2px 8px;
+        border: 1px solid #dbe5ef;
+        border-radius: 12px;
+        background: #ffffff;
+    }
+
+    #mps-form .order-cell span {
+        color: #2f455d;
+        font-size: 0.87rem;
+        font-weight: 700;
+        margin-bottom: 5px;
+    }
+
+    #mps-form .text-muted {
+        font-size: 0.88rem;
+    }
+
+    .mps-form-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 2px;
+    }
+
+    #run-mps-btn {
+        border-radius: 12px;
+        font-weight: 700;
+        padding: 10px 20px;
+        background: #173b4d;
+        color: #ffffff;
+        border: none;
+        box-shadow: 0 4px 12px rgba(23, 59, 77, 0.25);
+    }
+
+    #run-mps-btn:hover {
+        background: #2d6178;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(23, 59, 77, 0.35);
+    }
+
+    #run-mps-btn:active {
+        background: #173b4d;
+        transform: translateY(0);
+    }
+
+    #epp-result .card-body {
+        padding: -5px 12px 0px;
+    }
+
+    #epp-result .lead {
+        margin-bottom: 0 !important;
+        font-size: 0.9rem;
+        font-weight: 600;
+        line-height: 1.3;
+    }
+
+    #error-alert {
+        border-radius: 12px;
+        border-width: 1px;
+    }
+
+    .ppa-panel {
+        border: 1px solid #d9e4cf;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(56, 84, 31, 0.08);
+        overflow: hidden;
+        transition: all 0.2s ease;
+        margin-bottom: 0;
+    }
+
+    .ppa-panel .card-header {
+        padding: 2px 14px;
+    }
+
+    .ppa-panel .card-header h5 {
+        font-size: 1.02rem;
+        font-weight: 700;
+    }
+
+    .ppa-title {
+        font-size: calc(0.95rem + 1px);
+        font-weight: 700;
+    }
+
+    .section-title-lg {
+        font-size: calc(0.95rem + 4px);
+        font-weight: 700;
+    }
+
+    .ppa-panel .card-body {
+        padding: 2px 14px 0px;
+        background: #fcfef9;
+    }
+
+    .ppa-panel.ppa-collapsed #ppa-table-container {
+        display: none !important;
+    }
+
+    #ppa-table-wrapper .table-sm {
+        font-size: 15px;
+        margin-bottom: 0;
+        table-layout: fixed;
+        width: 100%;
+    }
+
+    #ppa-table-wrapper .ppa-table th,
+    #ppa-table-wrapper .ppa-table td {
+        font-size: inherit;
+        line-height: 1.2;
+    }
+
+    #ppa-table-wrapper .table-sm td,
+    #ppa-table-wrapper .table-sm th {
+        padding: 0.4rem 0.42rem;
+        white-space: nowrap;
+    }
+
+    #ppa-table-wrapper th:nth-child(1),
+    #ppa-table-wrapper td:nth-child(1) {
+        width: 34px;
+    }
+
+    #ppa-table-wrapper th:nth-child(2),
+    #ppa-table-wrapper td:nth-child(2) {
+        width: 34px;
+    }
+
+    #ppa-table-wrapper th:nth-child(3),
+    #ppa-table-wrapper td:nth-child(3),
+    #ppa-table-wrapper th:nth-child(4),
+    #ppa-table-wrapper td:nth-child(4),
+    #ppa-table-wrapper th:nth-child(5),
+    #ppa-table-wrapper td:nth-child(5) {
+        width: 84px;
+    }
+
+    #ppa-explanation {
+        margin-top: 8px !important;
+        font-size: 15px;
+        line-height: 1.4;
+    }
+
+    .ppa-explanation-text {
+        font-size: inherit;
+    }
+
     .table-sm {
         font-size: 0.9rem;
     }
@@ -260,14 +540,14 @@
 
     .order-grid {
         display: grid;
-        grid-template-columns: repeat(12, minmax(100px, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         gap: 12px;
         overflow-x: auto;
         padding-top: 4px;
     }
 
     .order-cell {
-        min-width: 100px;
+        min-width: 0;
     }
 
     .order-cell span {
@@ -275,6 +555,10 @@
         margin-bottom: 4px;
         font-size: 0.9rem;
         font-weight: 600;
+    }
+
+    .order-cell .form-control {
+        width: 100%;
     }
 
     .ppa-app-end {
@@ -285,6 +569,77 @@
         opacity: 0.6;
         cursor: not-allowed;
     }
+
+    @media (max-width: 1024px) {
+        .mps-top-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .mps-top-layout.ppa-open {
+            grid-template-columns: 1fr;
+        }
+
+        .mps-param-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .order-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+    }
+
+    .mps-results-container {
+        padding: 25px 24px 18px 24px;
+        border-radius: 12px;
+        background: #fff;
+        border: 1px solid #e0e7f1;
+        box-shadow: 0 4px 12px rgba(28, 52, 84, 0.06);
+        margin-bottom: 20px;
+    }
+
+    .epp-card-inner {
+        border: none;
+        box-shadow: none;
+        margin-bottom: 10px;
+    }
+
+    .epp-card-inner .card-header {
+        border-radius: 8px;
+        padding: 0px 8px !important;
+    }
+
+    .epp-card-inner .card-body {
+        padding: 0px 40px !important;
+    }
+
+    .epp-card-inner .card-header h5 {
+        font-size: 1.0rem !important;
+        font-weight: 700;
+        margin: 0 !important;
+    }
+
+    .mps-table-inner .card {
+        border: none;
+        box-shadow: none;
+    }
+
+    @media (max-width: 768px) {
+        .order-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .mps-hero {
+            padding: 10px 10px;
+        }
+
+        .mps-hero h1 {
+            font-size: 30px;
+        }
+
+        .mps-hero p {
+            font-size: 14px;
+        }
+    }
 </style>
 
 <script>
@@ -294,6 +649,35 @@ const MPS_RESULT_STORAGE_KEY = 'inventory.mps.lastResult';
 function parseNumberOrDefault(value, defaultValue = 0) {
     const n = Number(value);
     return Number.isFinite(n) ? n : defaultValue;
+}
+
+function setTopLayoutPpaOpen(isOpen) {
+    const layout = document.querySelector('.mps-top-layout');
+    if (!layout) return;
+
+    layout.classList.toggle('ppa-open', Boolean(isOpen));
+}
+
+function setPpaPanelCollapsed() {
+    const panel = document.getElementById('ppa-table-wrapper');
+    const tableContainer = document.getElementById('ppa-table-container');
+    if (!panel || !tableContainer) return;
+
+    panel.classList.remove('ppa-expanded');
+    panel.classList.add('ppa-collapsed');
+    tableContainer.style.display = 'none';
+    setTopLayoutPpaOpen(false);
+}
+
+function setPpaPanelExpanded() {
+    const panel = document.getElementById('ppa-table-wrapper');
+    const tableContainer = document.getElementById('ppa-table-container');
+    if (!panel || !tableContainer) return;
+
+    panel.classList.remove('ppa-collapsed');
+    panel.classList.add('ppa-expanded');
+    tableContainer.style.display = 'block';
+    setTopLayoutPpaOpen(true);
 }
 
 function updateOrderGridLabels(labels) {
@@ -588,7 +972,9 @@ function displayResults(result) {
             ppaTbody.appendChild(tr);
         });
 
-        document.getElementById('ppa-table-wrapper').style.display = 'block';
+        setPpaPanelExpanded();
+    } else {
+        setPpaPanelCollapsed();
     }
 }
 
@@ -597,7 +983,7 @@ function showError(message) {
     document.getElementById('error-alert').style.display = 'block';
     document.getElementById('mps-table-wrapper').style.display = 'none';
     document.getElementById('epp-result').style.display = 'none';
-    document.getElementById('ppa-table-wrapper').style.display = 'none';
+    setPpaPanelCollapsed();
 }
 
 function getCookie(name) {
@@ -615,6 +1001,7 @@ function getCookie(name) {
     return cookieValue;
 }
 
+setPpaPanelCollapsed();
 initMpsStatePersistence();
 </script>
 {% endblock %}
