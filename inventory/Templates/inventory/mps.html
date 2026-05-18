@@ -1,0 +1,251 @@
+{% extends 'inventory/base.html' %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid" style="padding: 20px;">
+    <h1>{{ title }}</h1>
+    
+    <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Thiết lập tham số và chọn sản phẩm</h5>
+        </div>
+        <div class="card-body">
+            <form id="mps-form" class="row g-3">
+                {% csrf_token %}
+                
+                <!-- Chọn sản phẩm -->
+                <div class="col-md-3">
+                    <label for="product_id" class="form-label">Sản phẩm <span class="text-danger">*</span></label>
+                    <select id="product_id" name="product_id" class="form-control" required>
+                        <option value="">-- Chọn sản phẩm --</option>
+                        {% for product in products %}
+                            <option value="{{ product.id }}">{{ product.name }} (ID: {{ product.id }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <!-- Chi phí thiết lập (C) -->
+                <div class="col-md-3">
+                    <label for="setup_cost" class="form-label">Chi phí thiết lập (C) - VNĐ/lần</label>
+                    <input type="number" id="setup_cost" name="setup_cost" class="form-control" value="40000000" step="1000000" min="0">
+                    <small class="text-muted">Mặc định: 40,000,000 VNĐ</small>
+                </div>
+                
+                <!-- Chi phí lưu kho (H) -->
+                <div class="col-md-3">
+                    <label for="holding_cost" class="form-label">Chi phí lưu kho (H) - VNĐ/sản phẩm/kỳ</label>
+                    <input type="number" id="holding_cost" name="holding_cost" class="form-control" value="250" step="10" min="0">
+                    <small class="text-muted">Mặc định: 250 VNĐ</small>
+                </div>
+                
+                <!-- Tồn kho ban đầu -->
+                <div class="col-md-3">
+                    <label for="begin_inventory" class="form-label">Tồn kho ban đầu - Đơn vị</label>
+                    <input type="number" id="begin_inventory" name="begin_inventory" class="form-control" value="0" step="1" min="0">
+                    <small class="text-muted">Mặc định: 0</small>
+                </div>
+                
+                <!-- Nút tính toán -->
+                <div class="col-md-12">
+                    <button type="button" id="run-mps-btn" class="btn btn-success btn-lg">
+                        <i class="fas fa-calculator"></i> Tính toán MPS
+                    </button>
+                    <span id="loading-spinner" style="display: none;">
+                        <span class="spinner-border spinner-border-sm ms-2" role="status" aria-hidden="true"></span>
+                        Đang xử lý...
+                    </span>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Kết quả EPP -->
+    <div id="epp-result" class="card" style="margin-bottom: 20px; display: none;">
+        <div class="card-header bg-info text-white">
+            <h5 class="mb-0">Chỉ số EPP (Economic Part Period)</h5>
+        </div>
+        <div class="card-body">
+            <p class="lead">EPP = <strong id="epp-value">0</strong> kỳ</p>
+            <p class="text-muted">EPP = C / H = Chi phí thiết lập / Chi phí lưu kho</p>
+        </div>
+    </div>
+    
+    <!-- Bảng MPS -->
+    <div id="mps-table-wrapper" style="display: none;">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Lập kế hoạch sản xuất chính (MPS)</h5>
+            </div>
+            <div class="card-body">
+                <div style="overflow-x: auto;">
+                    <table class="table table-bordered table-hover table-sm">
+                        <thead class="table-dark">
+                            <tr>
+                                <th class="text-center">Tháng</th>
+                                <th class="text-center">Nhu cầu dự báo<br/>(Demand)</th>
+                                <th class="text-center">Đơn hàng KH<br/>(Orders)</th>
+                                <th class="text-center">Sản lượng MPS<br/>(MPS)</th>
+                                <th class="text-center">Tồn kho dự báo<br/>(Projected On-hand)</th>
+                                <th class="text-center">Còn lại để bán<br/>(ATP)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mps-tbody">
+                            <!-- Dữ liệu sẽ được thêm bằng JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Thông báo lỗi -->
+    <div id="error-alert" class="alert alert-danger" style="display: none; margin-top: 20px;" role="alert">
+        <strong>Lỗi:</strong> <span id="error-message"></span>
+    </div>
+</div>
+
+<style>
+    .table-sm {
+        font-size: 0.9rem;
+    }
+    
+    .table-sm td, .table-sm th {
+        padding: 0.4rem;
+    }
+    
+    thead th {
+        vertical-align: middle;
+    }
+    
+    .text-center {
+        text-align: center;
+    }
+    
+    .card-header {
+        font-weight: bold;
+    }
+    
+    .form-control, .form-select {
+        border-radius: 0.375rem;
+    }
+    
+    button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+</style>
+
+<script>
+document.getElementById('run-mps-btn').addEventListener('click', function() {
+    const productId = document.getElementById('product_id').value;
+    const setupCost = document.getElementById('setup_cost').value;
+    const holdingCost = document.getElementById('holding_cost').value;
+    const beginInventory = document.getElementById('begin_inventory').value;
+    
+    if (!productId) {
+        showError('Vui lòng chọn sản phẩm');
+        return;
+    }
+    
+    if (!setupCost || !holdingCost) {
+        showError('Vui lòng nhập chi phí thiết lập và chi phí lưu kho');
+        return;
+    }
+    
+    runMPS(productId, setupCost, holdingCost, beginInventory);
+});
+
+function runMPS(productId, C, H, beginInventory) {
+    const btn = document.getElementById('run-mps-btn');
+    const spinner = document.getElementById('loading-spinner');
+    const errorAlert = document.getElementById('error-alert');
+    
+    btn.disabled = true;
+    spinner.style.display = 'inline';
+    errorAlert.style.display = 'none';
+    
+    const payload = {
+        product_id: parseInt(productId),
+        C: parseFloat(C),
+        H: parseFloat(H),
+        begin_inventory: parseFloat(beginInventory)
+    };
+    
+    fetch('/api/mps/run/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json())
+    .then(result => {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+        
+        if (result.error) {
+            showError(result.error);
+            return;
+        }
+        
+        if (result.success) {
+            displayResults(result);
+        }
+    })
+    .catch(error => {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+        showError('Lỗi kết nối: ' + error.message);
+    });
+}
+
+function displayResults(result) {
+    // Hiển thị EPP
+    document.getElementById('epp-value').textContent = result.epp.toFixed(2);
+    document.getElementById('epp-result').style.display = 'block';
+    
+    // Hiển thị bảng MPS
+    const tbody = document.getElementById('mps-tbody');
+    tbody.innerHTML = '';
+    
+    result.data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="text-center"><strong>Tháng ${row.month}</strong></td>
+            <td class="text-center">${row.demand.toLocaleString()}</td>
+            <td class="text-center">${row.orders.toLocaleString()}</td>
+            <td class="text-center"><strong class="text-success">${row.mps.toLocaleString()}</strong></td>
+            <td class="text-center">${row.projected_on_hand.toLocaleString()}</td>
+            <td class="text-center"><strong class="text-info">${row.atp.toLocaleString()}</strong></td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    document.getElementById('mps-table-wrapper').style.display = 'block';
+}
+
+function showError(message) {
+    document.getElementById('error-message').textContent = message;
+    document.getElementById('error-alert').style.display = 'block';
+    document.getElementById('mps-table-wrapper').style.display = 'none';
+    document.getElementById('epp-result').style.display = 'none';
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}

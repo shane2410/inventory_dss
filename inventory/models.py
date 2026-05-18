@@ -203,3 +203,57 @@ class PlanningConfiguration(models.Model):
 
     def __str__(self):
         return f"Planning Config - {self.updated_at:%Y-%m-%d %H:%M}"
+
+
+# =========================
+# DISAGGREGATED PLAN (Phân rã theo sản phẩm)
+# =========================
+class DisaggregatedPlan(models.Model):
+    """Sản lượng đã phân rã theo loại sản phẩm"""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    month = models.IntegerField()
+    qty = models.IntegerField()
+
+    class Meta:
+        ordering = ['month']
+        unique_together = ('product', 'month')
+
+    def __str__(self):
+        return f"{self.product} - Tháng {self.month} - Qty: {self.qty}"
+
+
+# =========================
+# CUSTOMER ORDER
+# =========================
+class CustomerOrder(models.Model):
+    """Đơn hàng khách hàng"""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    month = models.IntegerField()
+    qty = models.IntegerField()
+
+    class Meta:
+        ordering = ['month']
+
+    def __str__(self):
+        return f"{self.product} - Tháng {self.month} - Qty: {self.qty}"
+
+
+# =========================
+# MPS CONFIGURATION (Thiết lập tham số cho MPS)
+# =========================
+class MPSConfiguration(models.Model):
+    """Lưu các input parameters cho MPS"""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True)
+    setup_cost = models.FloatField(default=40000000, help_text="Chi phí thiết lập (C)")
+    holding_cost = models.FloatField(default=250, help_text="Chi phí lưu kho (H)")
+    begin_inventory = models.FloatField(default=0, help_text="Tồn kho ban đầu")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "MPS Configurations"
+
+    def __str__(self):
+        if self.product:
+            return f"MPS Config - {self.product}"
+        return f"MPS Config - {self.updated_at:%Y-%m-%d}"

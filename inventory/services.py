@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
+import math
 from collections import defaultdict
-from inventory.models import SalesData, BOM, Material, Product, ProductRatio
+from inventory.models import SalesData, BOM, Material, Product, ProductRatio, DisaggregatedPlan, CustomerOrder
 
 
 # =========================
@@ -539,4 +540,127 @@ def run_dss(product_id, source='operations'):
         })
 
     return results
+
+
+# =========================
+# MPS (Master Planning Schedule) - PPA (Part Period Algorithm)
+# =========================
+
+def get_demand_by_product(product_id):
+    """Lấy nhu cầu theo tháng từ DisaggregatedPlan"""
+    data = DisaggregatedPlan.objects.filter(product_id=product_id).order_by("month")
+    return [int(x.qty) for x in data]
+
+
+def get_orders_by_product(product_id):
+    """Lấy đơn hàng khách hàng theo tháng (tháng 5-12)"""
+    orders = CustomerOrder.objects.filter(product_id=product_id).order_by("month")
+    
+    # map month → qty
+    order_map = {o.month: o.qty for o in orders}
+    
+    result = []
+    for m in range(5, 13):  # tháng 5 → 12
+        result.append(order_map.get(m, 0))
+    
+    return result
+
+
+def round_up(x, base=1000):
+    """Làm tròn lên theo base (mặc định 1000)"""
+    return int(math.ceil(x / base)) * base
+
+
+def calculate_epp(C, H):
+    """Tính Economic Part Period (EPP)"""
+    return C / H
+
+
+def ppa_lot_sizing(demand, C, H):
+    """
+    Phương pháp PPA (Part Period Algorithm) để xác định kích cỡ lô
+    
+    Tham số:
+    - demand: list số lượng nhu cầu theo kỳ
+    - C: chi phí thiết lập (setup cost)
+    - H: chi phí lưu kho (holding cost)
+    
+    Trả về:
+    - list kích cỡ lô
+    """
+    EPP = calculate_epp(C, H)
+
+    n = len(demand)
+    lots = [0] * n
+
+    t = 0
+    while t < n:
+        part_period = 0
+        best_k = 1
+        best_diff = float("inf")
+
+        for k in range(1, n - t + 1):
+            if k > 1:
+                part_period += (k - 1) * demand[t + k - 1]
+
+            diff = abs(part_period - EPP)
+
+            if diff < best_diff:
+                best_diff = diff
+                best_k = k
+            else:
+                break
+
+        lot_size = sum(demand[t:t + best_k])
+        lot_size = round_up(lot_size)
+
+        lots[t] = lot_size
+        t += best_k
+
+    return lots
+
+
+def calculate_mps(demand, orders, lots, begin_inventory=0):
+    """
+    Tính MPS (kế hoạch sản xuất) và ATP (Available To Promise)
+    
+    Tham số:
+    - demand: nhu cầu dự báo theo kỳ
+    - orders: đơn hàng khách hàng theo kỳ
+    - lots: kích cỡ lô sản xuất
+    - begin_inventory: tồn kho ban đầu
+    
+    Trả về:
+    - projected_on_hand: tồn kho dự báo
+    - atp: Available To Promise
+    """
+    n = len(demand)
+
+    projected = [0] * n
+    atp = [0] * n
+
+    for t in range(n):
+        need = max(demand[t], orders[t])
+
+        if t == 0:
+            projected[t] = begin_inventory + lots[t] - need
+        else:
+            projected[t] = projected[t-1] + lots[t] - need
+
+    # ATP
+    for t in range(n):
+        if lots[t] > 0:
+            next_t = t + 1
+            sum_orders = 0
+
+            while next_t < n and lots[next_t] == 0:
+                sum_orders += orders[next_t]
+                next_t += 1
+
+            if t == 0:
+                atp[t] = lots[t] + begin_inventory - orders[t] - sum_orders
+            else:
+                atp[t] = lots[t] - orders[t] - sum_orders
+
+    return projected, atp
 

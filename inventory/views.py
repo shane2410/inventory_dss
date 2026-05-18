@@ -11,7 +11,7 @@ import pandas as pd
 from openpyxl import Workbook, load_workbook
 from .models import Product, Material, SalesData, Transaction, BOM, ProductRatio
 from .forms import ImportDataForm, MonthlyForecastImportForm, TransactionForm
-from .services import aggregate_material_demand, abc_classification, disaggregate_forecast, forecast_monthly_total, forecast_product, forecast_product_monthly, run_dss
+from .services import aggregate_material_demand, abc_classification, disaggregate_forecast, forecast_monthly_total, forecast_product, forecast_product_monthly, run_dss, get_demand_by_product, get_orders_by_product, ppa_lot_sizing, calculate_mps
 from .recommendations import build_dashboard_recommendations, build_inventory_alert_recommendations, build_inventory_watchlist_recommendations
 from datetime import datetime, timedelta, date
 from .permissions import (
@@ -1018,11 +1018,82 @@ def product_decomposition(request):
 
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def mps(request):
-    return render(request, 'inventory/placeholder.html', {
-        'title': 'MPS',
-        'message': 'Trang MPS (Master Production Schedule) đang được xây dựng.'
-    })
+    """Trang MPS (Master Production Schedule)"""
+    products = Product.objects.all()
+    context = {
+        'title': 'MPS - Lập kế hoạch sản xuất chính',
+        'products': products,
+    }
+    return render(request, 'inventory/mps.html', context)
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def run_mps_api(request):
+    """API để tính toán MPS dựa trên PPA"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    try:
+        import json
+        data = json.loads(request.body)
+        
+        product_id = int(data.get('product_id'))
+        C = float(data.get('C', 40000000))  # Chi phí thiết lập
+        H = float(data.get('H', 250))  # Chi phí lưu kho
+        begin_inventory = float(data.get('begin_inventory', 0))
+        
+        # Lấy dữ liệu
+        demand = get_demand_by_product(product_id)
+        orders = get_orders_by_product(product_id)
+        
+        if not demand:
+            return JsonResponse({
+                'error': 'Không có dữ liệu nhu cầu cho sản phẩm này'
+            }, status=400)
+        
+        # Tính toán EPP
+        from inventory.services import calculate_epp
+        epp = calculate_epp(C, H)
+        
+        # Tính kích cỡ lô bằng PPA
+        lots = ppa_lot_sizing(demand, C, H)
+        
+        # Tính MPS
+        projected, atp = calculate_mps(demand, orders, lots, begin_inventory)
+        
+        # Chuẩn bị dữ liệu để return
+        months = list(range(5, 13))  # tháng 5-12
+        
+        result_data = []
+        for i, month in enumerate(months):
+            result_data.append({
+                'month': month,
+                'demand': demand[i] if i < len(demand) else 0,
+                'orders': orders[i] if i < len(orders) else 0,
+                'mps': lots[i] if i < len(lots) else 0,
+                'projected_on_hand': int(projected[i]) if i < len(projected) else 0,
+                'atp': int(atp[i]) if i < len(atp) else 0,
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'epp': round(epp, 2),
+            'data': result_data,
+            'demand': demand,
+            'orders': orders,
+            'mps': lots,
+            'projected_on_hand': projected,
+            'atp': atp
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'error': f'Lỗi: {str(e)}'
+        }, status=500)
 
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)

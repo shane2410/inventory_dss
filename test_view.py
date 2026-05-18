@@ -29,9 +29,7 @@ except Exception as e:
 print("\n2. Adding test data...")
 start_month = date(2025, 5, 1)
 test_data = [
-    ProductRatio(product_code='P001', product_name='Product A', month=start_month, ratio=0.3, forecast_qty=300),
     ProductRatio(product_code='P002', product_name='Product B', month=start_month, ratio=0.5, forecast_qty=500),
-    ProductRatio(product_code='P001', product_name='Product A', month=start_month + timedelta(days=30), ratio=0.4, forecast_qty=440),
 ]
 ProductRatio.objects.bulk_create(test_data)
 count = ProductRatio.objects.count()
