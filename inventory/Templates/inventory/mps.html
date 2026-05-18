@@ -27,23 +27,20 @@
                 
                 <!-- Chi phí thiết lập (C) -->
                 <div class="col-md-3">
-                    <label for="setup_cost" class="form-label">Chi phí thiết lập (C) - VNĐ/lần</label>
-                    <input type="number" id="setup_cost" name="setup_cost" class="form-control" value="40000000" step="1000000" min="0">
-                    <small class="text-muted">Mặc định: 40,000,000 VNĐ</small>
+                    <label for="setup_cost" class="form-label">Chi phí thiết lập (C) - VNĐ/lần <span class="text-danger">*</span></label>
+                    <input type="number" id="setup_cost" name="setup_cost" class="form-control" step="1000000" min="0" required>
                 </div>
                 
                 <!-- Chi phí lưu kho (H) -->
                 <div class="col-md-3">
-                    <label for="holding_cost" class="form-label">Chi phí lưu kho (H) - VNĐ/sản phẩm/kỳ</label>
-                    <input type="number" id="holding_cost" name="holding_cost" class="form-control" value="250" step="10" min="0">
-                    <small class="text-muted">Mặc định: 250 VNĐ</small>
+                    <label for="holding_cost" class="form-label">Chi phí lưu kho (H) - VNĐ/sản phẩm/kỳ <span class="text-danger">*</span></label>
+                    <input type="number" id="holding_cost" name="holding_cost" class="form-control" step="10" min="0" required>
                 </div>
                 
                 <!-- Tồn kho ban đầu -->
                 <div class="col-md-3">
                     <label for="begin_inventory" class="form-label">Tồn kho ban đầu - Đơn vị</label>
-                    <input type="number" id="begin_inventory" name="begin_inventory" class="form-control" value="0" step="1" min="0">
-                    <small class="text-muted">Mặc định: 0</small>
+                    <input type="number" id="begin_inventory" name="begin_inventory" class="form-control" step="1" min="0">
                 </div>
                 
                 <!-- Nút tính toán -->

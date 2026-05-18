@@ -1021,7 +1021,10 @@ def product_decomposition(request):
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def mps(request):
     """Trang MPS (Master Production Schedule)"""
-    products = Product.objects.all()
+    from inventory.models import DisaggregatedPlan
+    # Chỉ lấy sản phẩm từ Phân rã sản phẩm (DisaggregatedPlan)
+    product_ids = DisaggregatedPlan.objects.values_list('product_id', flat=True).distinct()
+    products = Product.objects.filter(id__in=product_ids)
     context = {
         'title': 'MPS - Lập kế hoạch sản xuất chính',
         'products': products,
