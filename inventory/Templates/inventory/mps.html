@@ -48,35 +48,51 @@
                     <label class="form-label">Đơn hàng khách hàng theo tháng/kỳ</label>
                     <div class="order-grid">
                         <div class="order-cell">
-                            <span>Tháng 5</span>
+                            <span>Kì 1</span>
+                            <input type="number" class="form-control order-input" data-month="1" min="0" step="1" placeholder="0">
+                        </div>
+                        <div class="order-cell">
+                            <span>Kì 2</span>
+                            <input type="number" class="form-control order-input" data-month="2" min="0" step="1" placeholder="0">
+                        </div>
+                        <div class="order-cell">
+                            <span>Kì 3</span>
+                            <input type="number" class="form-control order-input" data-month="3" min="0" step="1" placeholder="0">
+                        </div>
+                        <div class="order-cell">
+                            <span>Kì 4</span>
+                            <input type="number" class="form-control order-input" data-month="4" min="0" step="1" placeholder="0">
+                        </div>
+                        <div class="order-cell">
+                            <span>Kì 5</span>
                             <input type="number" class="form-control order-input" data-month="5" min="0" step="1" placeholder="0">
                         </div>
                         <div class="order-cell">
-                            <span>Tháng 6</span>
+                            <span>Kì 6</span>
                             <input type="number" class="form-control order-input" data-month="6" min="0" step="1" placeholder="0">
                         </div>
                         <div class="order-cell">
-                            <span>Tháng 7</span>
+                            <span>Kì 7</span>
                             <input type="number" class="form-control order-input" data-month="7" min="0" step="1" placeholder="0">
                         </div>
                         <div class="order-cell">
-                            <span>Tháng 8</span>
+                            <span>Kì 8</span>
                             <input type="number" class="form-control order-input" data-month="8" min="0" step="1" placeholder="0">
                         </div>
                         <div class="order-cell">
-                            <span>Tháng 9</span>
+                            <span>Kì 9</span>
                             <input type="number" class="form-control order-input" data-month="9" min="0" step="1" placeholder="0">
                         </div>
                         <div class="order-cell">
-                            <span>Tháng 10</span>
+                            <span>Kì 10</span>
                             <input type="number" class="form-control order-input" data-month="10" min="0" step="1" placeholder="0">
                         </div>
                         <div class="order-cell">
-                            <span>Tháng 11</span>
+                            <span>Kì 11</span>
                             <input type="number" class="form-control order-input" data-month="11" min="0" step="1" placeholder="0">
                         </div>
                         <div class="order-cell">
-                            <span>Tháng 12</span>
+                            <span>Kì 12</span>
                             <input type="number" class="form-control order-input" data-month="12" min="0" step="1" placeholder="0">
                         </div>
                     </div>
@@ -244,7 +260,7 @@
 
     .order-grid {
         display: grid;
-        grid-template-columns: repeat(8, minmax(100px, 1fr));
+        grid-template-columns: repeat(12, minmax(100px, 1fr));
         gap: 12px;
         overflow-x: auto;
         padding-top: 4px;
@@ -274,6 +290,19 @@ const MPS_RESULT_STORAGE_KEY = 'inventory.mps.lastResult';
 function parseNumberOrDefault(value, defaultValue = 0) {
     const n = Number(value);
     return Number.isFinite(n) ? n : defaultValue;
+}
+
+function updateOrderGridLabels(labels) {
+    if (!Array.isArray(labels) || labels.length === 0) return;
+
+    const cells = Array.from(document.querySelectorAll('.order-cell'));
+    cells.forEach((cell, index) => {
+        const label = labels[index];
+        const span = cell.querySelector('span');
+        if (span && label != null) {
+            span.textContent = label;
+        }
+    });
 }
 
 function collectFormState() {
@@ -345,6 +374,14 @@ function restoreResultState() {
 
         const saved = JSON.parse(raw);
         if (!saved || !saved.result || !saved.result.success) return;
+
+        // Do not allow a previously-saved result to overwrite the input labels on load.
+        // Saved results can contain `input_labels` (month strings) which would replace
+        // our desired fixed input labels (Kì 1..Kì 12). Remove that field before
+        // rendering the saved result so labels stay as the template defines.
+        if (saved.result && saved.result.input_labels) {
+            delete saved.result.input_labels;
+        }
 
         displayResults(saved.result);
     } catch (error) {
@@ -437,6 +474,10 @@ function runMPS(productCode, C, H, beginInventory, orders) {
 }
 
 function displayResults(result) {
+    if (Array.isArray(result.input_labels) && result.input_labels.length > 0) {
+        updateOrderGridLabels(result.input_labels);
+    }
+
     // Hiển thị EPP
     document.getElementById('epp-value').textContent = result.epp.toFixed(2);
     document.getElementById('epp-result').style.display = 'block';
@@ -445,7 +486,7 @@ function displayResults(result) {
     const tbody = document.getElementById('mps-tbody');
     tbody.innerHTML = '';
     
-    const months = result.data.map(row => row.month);
+    const months = result.data.map(row => row.month_label || row.month);
 
     // Tạo mảng các chỉ tiêu để render theo hàng (hỗ trợ chỉ tiêu có giá trị riêng 'values')
     const beginInvRaw = document.getElementById('begin_inventory') ? document.getElementById('begin_inventory').value : null;
