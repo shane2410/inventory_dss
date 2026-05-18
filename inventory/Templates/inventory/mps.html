@@ -279,8 +279,6 @@
 
     .ppa-app-end {
         font-weight: 800;
-        background-color: #fff8e5;
-        color: #8a5b00;
     }
     
     button:disabled {
@@ -555,18 +553,28 @@ function displayResults(result) {
         };
 
         // Header - will be rendered in the template head; here we just append rows
-        // Determine lot-end APP values from ppa_details so we can highlight them.
-        // Build set of lot-end APP values from ppa_details. Include zero-valued
-        // part_periods as well, because some lots end with APP = 0 and should
-        // still be highlighted.
-        const lotEndApps = new Set((result.ppa_details || []).map(d => {
-            const v = Number(d.part_period || d.partPeriod || 0);
-            return Number.isFinite(v) ? v : 0;
-        }));
+        // Highlight rule (as requested):
+        // for i in [1..len-2], if k[i] == k[i+1] then highlight row i-1;
+        // always highlight the last row.
+        const steps = result.ppa_steps || [];
+        const highlightedIndexes = new Set();
+
+        for (let idx = 1; idx < steps.length - 1; idx++) {
+            const currentK = Number(steps[idx].k);
+            const nextK = Number(steps[idx + 1].k);
+
+            if (currentK === nextK) {
+                highlightedIndexes.add(idx - 1);
+            }
+        }
+
+        if (steps.length > 0) {
+            highlightedIndexes.add(steps.length - 1);
+        }
 
         result.ppa_steps.forEach((step, idx) => {
             const appValue = toSafeNumber(step['APP(T)'] ?? step.APP_T ?? step.app_t ?? step.appT);
-            const isLotEnd = lotEndApps.has(appValue);
+            const isLotEnd = highlightedIndexes.has(idx);
             const appCellClass = isLotEnd ? 'ppa-app-end' : '';
 
             const tr = document.createElement('tr');

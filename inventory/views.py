@@ -1060,8 +1060,24 @@ def run_mps_api(request):
         begin_inventory = float(data.get('begin_inventory', 0))
         user_orders = data.get('orders') or []
         
-        # Lấy dữ liệu
-        demand = get_demand_by_product(product_code)
+        # Lấy dữ liệu cùng metadata tháng để render đúng timeline
+        month_labels = []
+        input_labels = []
+
+        if product_code and not product_code.isdigit():
+            ratio_rows = list(ProductRatio.objects.filter(product_code=product_code).order_by('month'))
+            demand = [int(round(row.forecast_qty or 0)) for row in ratio_rows]
+            month_labels = [row.month.strftime('%m/%Y') for row in ratio_rows]
+
+            if ratio_rows:
+                start_month = pd.Timestamp(ratio_rows[0].month).to_period('M').to_timestamp()
+                input_labels = [
+                    (start_month + pd.DateOffset(months=index)).strftime('%m/%Y')
+                    for index in range(12)
+                ]
+        else:
+            demand = get_demand_by_product(product_code)
+
         orders = []
         for index in range(len(demand)):
             if index < len(user_orders):
@@ -1087,13 +1103,18 @@ def run_mps_api(request):
         # Tính MPS
         projected, atp, net_inventory = calculate_mps(demand, orders, lots, begin_inventory)
         
-        # Chuẩn bị dữ liệu để return
-        months = list(range(5, 13))  # tháng 5-12
+        # Chuẩn bị dữ liệu để return theo đúng số kỳ forecast hiện có
+        if not month_labels:
+            months = list(range(1, len(demand) + 1))
+            month_labels = [f"Tháng {month}" for month in months]
+        else:
+            months = list(range(1, len(demand) + 1))
         
         result_data = []
         for i, month in enumerate(months):
             result_data.append({
                 'month': month,
+                'month_label': month_labels[i] if i < len(month_labels) else f"Tháng {month}",
                 'demand': demand[i] if i < len(demand) else 0,
                 'orders': orders[i] if i < len(orders) else 0,
                 'net_inventory': int(net_inventory[i]) if i < len(net_inventory) else 0,
@@ -1109,6 +1130,8 @@ def run_mps_api(request):
             'data': result_data,
             'ppa_details': ppa_details,
             'ppa_steps': ppa_steps,
+            'month_labels': month_labels,
+            'input_labels': input_labels if input_labels else month_labels,
             'demand': demand,
             'orders': orders,
             'mps': lots,
