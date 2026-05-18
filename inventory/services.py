@@ -658,12 +658,10 @@ def calculate_ppa_analysis(demand, C, H):
     ppa_steps = []  # flattened detailed rows for each k and i
 
     t = 0
-    current_k = 1
     while t < n:
         start = t
         end = start
         current_pp = 0
-        detail_rows = []
 
         # accumulate months until adding next would exceed EPP
         for i in range(start, n):
@@ -678,20 +676,12 @@ def calculate_ppa_analysis(demand, C, H):
 
             current_pp = new_pp
             end = i
-            detail_rows.append({
-                'k': current_k,
-                'i': offset + 1,
-                'Ri': Ri,
-                '(i-1)Ri': app,
-                'APP(T)': current_pp,
-            })
 
         selected_demands = demand[start:end + 1]
         diff = abs(current_pp - EPP)
-        ppa_steps.extend(detail_rows)
 
         ppa_details.append({
-            'k': current_k,
+            'k': len(ppa_details) + 1,
             'periods': list(range(5 + start, 5 + end + 1)),  # Tháng 5-12
             'demands': selected_demands,
             'part_period': int(current_pp),
@@ -704,7 +694,34 @@ def calculate_ppa_analysis(demand, C, H):
         lot_size = round_up(lot_size)
         lots[start] = lot_size
         t = end + 1
-        current_k += 1
+
+    # PPA table rows follow the user's clarified boundary behavior:
+    # when a row pushes APP(T) past EPP, keep that row, then immediately
+    # restart the same demand index as a new lot row with the same k,
+    # i=1, Ri unchanged, and APP(T)=0.
+    current_i = 1
+    for idx, ri in enumerate(demand):
+        app = (current_i - 1) * ri
+
+        ppa_steps.append({
+            'k': idx + 1,
+            'i': current_i,
+            'Ri': ri,
+            '(i-1)Ri': app,
+            'APP(T)': app,
+        })
+
+        if app > EPP:
+            ppa_steps.append({
+                'k': idx + 1,
+                'i': 1,
+                'Ri': ri,
+                '(i-1)Ri': 0,
+                'APP(T)': 0,
+            })
+            current_i = 2
+        else:
+            current_i += 1
 
     return ppa_details, lots, ppa_steps
 
