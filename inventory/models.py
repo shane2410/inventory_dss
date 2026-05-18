@@ -257,3 +257,19 @@ class MPSConfiguration(models.Model):
         if self.product:
             return f"MPS Config - {self.product}"
         return f"MPS Config - {self.updated_at:%Y-%m-%d}"
+
+
+# =========================
+# SELECTED PRODUCT FOR MPS (Danh sách sản phẩm được chọn ở trang Phân rã)
+# =========================
+class SelectedProductForMPS(models.Model):
+    """Lưu lịch sử các sản phẩm (ID_P) được chọn tại trang Phân rã sản phẩm"""
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    selected_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-selected_at']
+        unique_together = ('product',)  # Mỗi sản phẩm chỉ lưu 1 lần
+
+    def __str__(self):
+        return f"{self.product} - Chọn lúc: {self.selected_at:%Y-%m-%d %H:%M}"

@@ -909,6 +909,15 @@ def product_decomposition(request):
                 )
                 month_ratio_total += ratio
 
+            # Lưu product được chọn vào SelectedProductForMPS (cho trang MPS)
+            from inventory.models import SelectedProductForMPS
+            try:
+                # Tìm product theo source_id (product_code)
+                product = Product.objects.get(source_id=product_code)
+                SelectedProductForMPS.objects.get_or_create(product=product)
+            except Product.DoesNotExist:
+                pass  # Nếu product không tìm thấy, bỏ qua
+
             if not math.isclose(month_ratio_total, 1.0, abs_tol=0.05):
                 month_warnings.append(f'{product_code}: tổng ratio = {month_ratio_total:.2f}')
 
@@ -1021,10 +1030,10 @@ def product_decomposition(request):
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def mps(request):
     """Trang MPS (Master Production Schedule)"""
-    from inventory.models import DisaggregatedPlan
-    # Chỉ lấy sản phẩm từ Phân rã sản phẩm (DisaggregatedPlan)
-    product_ids = DisaggregatedPlan.objects.values_list('product_id', flat=True).distinct()
-    products = Product.objects.filter(id__in=product_ids)
+    from inventory.models import SelectedProductForMPS
+    # Chỉ lấy sản phẩm đã được chọn ở trang Phân rã sản phẩm
+    selected = SelectedProductForMPS.objects.all()
+    products = Product.objects.filter(id__in=selected.values_list('product_id', flat=True))
     context = {
         'title': 'MPS - Lập kế hoạch sản xuất chính',
         'products': products,
