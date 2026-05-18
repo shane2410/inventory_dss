@@ -556,14 +556,17 @@ function displayResults(result) {
 
         // Header - will be rendered in the template head; here we just append rows
         // Determine lot-end APP values from ppa_details so we can highlight them.
+        // Build set of lot-end APP values from ppa_details. Include zero-valued
+        // part_periods as well, because some lots end with APP = 0 and should
+        // still be highlighted.
         const lotEndApps = new Set((result.ppa_details || []).map(d => {
             const v = Number(d.part_period || d.partPeriod || 0);
             return Number.isFinite(v) ? v : 0;
-        }).filter(n => n > 0));
+        }));
 
         result.ppa_steps.forEach((step, idx) => {
             const appValue = toSafeNumber(step['APP(T)'] ?? step.APP_T ?? step.app_t ?? step.appT);
-            const isLotEnd = appValue > 0 && lotEndApps.has(appValue);
+            const isLotEnd = lotEndApps.has(appValue);
             const appCellClass = isLotEnd ? 'ppa-app-end' : '';
 
             const tr = document.createElement('tr');
