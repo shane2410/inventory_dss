@@ -9,7 +9,7 @@ import re
 import numpy as np
 import pandas as pd
 from openpyxl import Workbook, load_workbook
-from .models import Product, Material, SalesData, Transaction, BOM, ProductRatio
+from .models import Product, Material, SalesData, Transaction, BOM, ProductRatio, DisaggregatedPlan, CustomerOrder, MPSConfiguration, SelectedProductForMPS
 from .forms import ImportDataForm, MonthlyForecastImportForm, TransactionForm
 from .services import aggregate_material_demand, abc_classification, disaggregate_forecast, forecast_monthly_total, forecast_product, forecast_product_monthly, run_dss, get_demand_by_product, get_orders_by_product, ppa_lot_sizing, calculate_mps
 from .recommendations import build_dashboard_recommendations, build_inventory_alert_recommendations, build_inventory_watchlist_recommendations
@@ -910,7 +910,6 @@ def product_decomposition(request):
                 month_ratio_total += ratio
 
             # Lưu product được chọn vào SelectedProductForMPS (cho trang MPS)
-            from inventory.models import SelectedProductForMPS
             try:
                 # Tìm product theo source_id (product_code)
                 product = Product.objects.get(source_id=product_code)
@@ -1030,7 +1029,6 @@ def product_decomposition(request):
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def mps(request):
     """Trang MPS (Master Production Schedule)"""
-    from inventory.models import SelectedProductForMPS
     # Chỉ lấy sản phẩm đã được chọn ở trang Phân rã sản phẩm
     selected = SelectedProductForMPS.objects.all()
     products = Product.objects.filter(id__in=selected.values_list('product_id', flat=True))
