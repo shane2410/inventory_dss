@@ -547,23 +547,46 @@ def run_dss(product_id, source='operations'):
 # =========================
 
 def get_demand_by_product(product_id):
-    """Lấy nhu cầu theo tháng từ DisaggregatedPlan"""
-    data = DisaggregatedPlan.objects.filter(product_id=product_id).order_by("month")
-    return [int(x.qty) for x in data]
+    """Lấy nhu cầu theo tháng.
+
+    Hỗ trợ cả luồng Operations (Product.id) và Planning (product_code từ ProductRatio).
+    """
+    if str(product_id).isdigit():
+        data = DisaggregatedPlan.objects.filter(product_id=product_id).order_by("month")
+        if data.exists():
+            return [int(x.qty) for x in data]
+
+    product_code = str(product_id or "").strip()
+    if not product_code:
+        return []
+
+    ratio_rows = ProductRatio.objects.filter(product_code=product_code).order_by("month")
+    return [int(round(row.forecast_qty or 0)) for row in ratio_rows]
 
 
 def get_orders_by_product(product_id):
-    """Lấy đơn hàng khách hàng theo tháng (tháng 5-12)"""
-    orders = CustomerOrder.objects.filter(product_id=product_id).order_by("month")
-    
-    # map month → qty
-    order_map = {o.month: o.qty for o in orders}
-    
-    result = []
-    for m in range(5, 13):  # tháng 5 → 12
-        result.append(order_map.get(m, 0))
-    
-    return result
+    """Lấy đơn hàng khách hàng theo tháng (tháng 5-12).
+
+    Với Planning hiện chưa có bảng đơn hàng riêng theo product_code, nên trả về 0.
+    """
+    if str(product_id).isdigit():
+        orders = CustomerOrder.objects.filter(product_id=product_id).order_by("month")
+
+        # map month → qty
+        order_map = {o.month: o.qty for o in orders}
+
+        result = []
+        for m in range(5, 13):  # tháng 5 → 12
+            result.append(order_map.get(m, 0))
+
+        return result
+
+    product_code = str(product_id or "").strip()
+    if not product_code:
+        return []
+
+    ratio_count = ProductRatio.objects.filter(product_code=product_code).count()
+    return [0] * ratio_count
 
 
 def round_up(x, base=1000):
@@ -595,29 +618,95 @@ def ppa_lot_sizing(demand, C, H):
 
     t = 0
     while t < n:
-        part_period = 0
-        best_k = 1
-        best_diff = float("inf")
+        start = t
+        end = start
+        current_pp = 0
 
-        for k in range(1, n - t + 1):
-            if k > 1:
-                part_period += (k - 1) * demand[t + k - 1]
+        for i in range(start, n):
+            Ri = demand[i]
+            offset = i - start
 
-            diff = abs(part_period - EPP)
-
-            if diff < best_diff:
-                best_diff = diff
-                best_k = k
-            else:
+            # Dừng khi part period mới vượt EPP.
+            new_pp = current_pp + offset * Ri
+            if new_pp > EPP:
                 break
 
-        lot_size = sum(demand[t:t + best_k])
+            current_pp = new_pp
+            end = i
+
+        lot_size = sum(demand[start:end + 1])
         lot_size = round_up(lot_size)
 
-        lots[t] = lot_size
-        t += best_k
+        lots[start] = lot_size
+        t = end + 1
 
     return lots
+
+
+def calculate_ppa_analysis(demand, C, H):
+    """
+    Tính chi tiết phân tích PPA
+    
+    Trả về:
+    - ppa_details: list các bước PPA với chi tiết từng lô
+    - lots: kích cỡ lô tối ưu
+    """
+    EPP = calculate_epp(C, H)
+    n = len(demand)
+    lots = [0] * n
+    ppa_details = []
+    ppa_steps = []  # flattened detailed rows for each k and i
+
+    t = 0
+    current_k = 1
+    while t < n:
+        start = t
+        end = start
+        current_pp = 0
+        detail_rows = []
+
+        # accumulate months until adding next would exceed EPP
+        for i in range(start, n):
+            Ri = demand[i]
+            offset = i - start
+
+            # part period mới nếu thêm tháng này
+            app = offset * Ri
+            new_pp = current_pp + app
+            if new_pp > EPP:
+                break
+
+            current_pp = new_pp
+            end = i
+            detail_rows.append({
+                'k': current_k,
+                'i': offset + 1,
+                'Ri': Ri,
+                '(i-1)Ri': app,
+                'APP(T)': current_pp,
+            })
+
+        selected_demands = demand[start:end + 1]
+        diff = abs(current_pp - EPP)
+        ppa_steps.extend(detail_rows)
+
+        ppa_details.append({
+            'k': current_k,
+            'periods': list(range(5 + start, 5 + end + 1)),  # Tháng 5-12
+            'demands': selected_demands,
+            'part_period': int(current_pp),
+            'epp': int(EPP),
+            'diff': int(diff),
+            'selected': True
+        })
+
+        lot_size = sum(selected_demands)
+        lot_size = round_up(lot_size)
+        lots[start] = lot_size
+        t = end + 1
+        current_k += 1
+
+    return ppa_details, lots, ppa_steps
 
 
 def calculate_mps(demand, orders, lots, begin_inventory=0):
@@ -627,25 +716,29 @@ def calculate_mps(demand, orders, lots, begin_inventory=0):
     Tham số:
     - demand: nhu cầu dự báo theo kỳ
     - orders: đơn hàng khách hàng theo kỳ
-    - lots: kích cỡ lô sản xuất
+    - lots: kích cỡ lô sản xuất (đã làm tròn)
     - begin_inventory: tồn kho ban đầu
     
     Trả về:
     - projected_on_hand: tồn kho dự báo
     - atp: Available To Promise
+    - net_inventory: tồn kho trước MPS (= tồn kho ban đầu - nhu cầu)
     """
     n = len(demand)
 
     projected = [0] * n
     atp = [0] * n
+    net_inventory = [0] * n
 
     for t in range(n):
-        need = max(demand[t], orders[t])
-
+        # Tính tồn kho trước MPS (net inventory)
         if t == 0:
-            projected[t] = begin_inventory + lots[t] - need
+            net_inventory[t] = begin_inventory - demand[t]
         else:
-            projected[t] = projected[t-1] + lots[t] - need
+            net_inventory[t] = projected[t-1] - demand[t]
+
+        # Tính tồn kho dự kiến = tồn kho trước MPS + cỡ lô
+        projected[t] = net_inventory[t] + lots[t]
 
     # ATP
     for t in range(n):
@@ -662,5 +755,5 @@ def calculate_mps(demand, orders, lots, begin_inventory=0):
             else:
                 atp[t] = lots[t] - orders[t] - sum_orders
 
-    return projected, atp
+    return projected, atp, net_inventory
 

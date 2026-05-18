@@ -933,6 +933,8 @@ def product_decomposition(request):
     plan_rows = []
     allocated_totals = {month.strftime('%Y_%m'): 0.0 for month in months}
 
+
+
     for row_index, row_source in enumerate(existing_product_codes):
         cells = []
         for month in months:
@@ -1026,12 +1028,15 @@ def product_decomposition(request):
 
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
-@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def mps(request):
     """Trang MPS (Master Production Schedule)"""
-    # Chỉ lấy sản phẩm đã được chọn ở trang Phân rã sản phẩm
-    selected = SelectedProductForMPS.objects.all()
-    products = Product.objects.filter(id__in=selected.values_list('product_id', flat=True))
+    # Planning dùng mã sản phẩm riêng từ ProductRatio, không dùng Product.id của Operations
+    products = (
+        ProductRatio.objects
+        .values('product_code', 'product_name')
+        .order_by('product_code')
+        .distinct()
+    )
     context = {
         'title': 'MPS - Lập kế hoạch sản xuất chính',
         'products': products,
@@ -1049,14 +1054,23 @@ def run_mps_api(request):
         import json
         data = json.loads(request.body)
         
-        product_id = int(data.get('product_id'))
+        product_code = str(data.get('product_code') or '').strip()
         C = float(data.get('C', 40000000))  # Chi phí thiết lập
         H = float(data.get('H', 250))  # Chi phí lưu kho
         begin_inventory = float(data.get('begin_inventory', 0))
+        user_orders = data.get('orders') or []
         
         # Lấy dữ liệu
-        demand = get_demand_by_product(product_id)
-        orders = get_orders_by_product(product_id)
+        demand = get_demand_by_product(product_code)
+        orders = []
+        for index in range(len(demand)):
+            if index < len(user_orders):
+                try:
+                    orders.append(max(0, int(user_orders[index] or 0)))
+                except (TypeError, ValueError):
+                    orders.append(0)
+            else:
+                orders.append(0)
         
         if not demand:
             return JsonResponse({
@@ -1064,14 +1078,14 @@ def run_mps_api(request):
             }, status=400)
         
         # Tính toán EPP
-        from inventory.services import calculate_epp
+        from inventory.services import calculate_epp, calculate_ppa_analysis
         epp = calculate_epp(C, H)
         
-        # Tính kích cỡ lô bằng PPA
-        lots = ppa_lot_sizing(demand, C, H)
+        # Tính chi tiết PPA analysis và kích cỡ lô (trả về cả các bước chi tiết)
+        ppa_details, lots, ppa_steps = calculate_ppa_analysis(demand, C, H)
         
         # Tính MPS
-        projected, atp = calculate_mps(demand, orders, lots, begin_inventory)
+        projected, atp, net_inventory = calculate_mps(demand, orders, lots, begin_inventory)
         
         # Chuẩn bị dữ liệu để return
         months = list(range(5, 13))  # tháng 5-12
@@ -1082,6 +1096,8 @@ def run_mps_api(request):
                 'month': month,
                 'demand': demand[i] if i < len(demand) else 0,
                 'orders': orders[i] if i < len(orders) else 0,
+                'net_inventory': int(net_inventory[i]) if i < len(net_inventory) else 0,
+                'lot_size': lots[i] if i < len(lots) else 0,
                 'mps': lots[i] if i < len(lots) else 0,
                 'projected_on_hand': int(projected[i]) if i < len(projected) else 0,
                 'atp': int(atp[i]) if i < len(atp) else 0,
@@ -1091,6 +1107,8 @@ def run_mps_api(request):
             'success': True,
             'epp': round(epp, 2),
             'data': result_data,
+            'ppa_details': ppa_details,
+            'ppa_steps': ppa_steps,
             'demand': demand,
             'orders': orders,
             'mps': lots,

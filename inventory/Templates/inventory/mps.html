@@ -16,11 +16,11 @@
                 
                 <!-- Chọn sản phẩm -->
                 <div class="col-md-3">
-                    <label for="product_id" class="form-label">Sản phẩm <span class="text-danger">*</span></label>
-                    <select id="product_id" name="product_id" class="form-control" required>
-                        <option value="">-- Chọn sản phẩm --</option>
+                    <label for="product_code" class="form-label">Sản phẩm Planning <span class="text-danger">*</span></label>
+                    <select id="product_code" name="product_code" class="form-control" required>
+                        <option value="">-- Chọn sản phẩm Planning --</option>
                         {% for product in products %}
-                            <option value="{{ product.id }}">{{ product.name }} (ID: {{ product.id }})</option>
+                            <option value="{{ product.product_code }}">{{ product.product_name }} ({{ product.product_code }})</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -41,6 +41,46 @@
                 <div class="col-md-3">
                     <label for="begin_inventory" class="form-label">Tồn kho ban đầu - Đơn vị</label>
                     <input type="number" id="begin_inventory" name="begin_inventory" class="form-control" step="1" min="0">
+                </div>
+
+                <!-- Đơn hàng khách hàng theo kỳ -->
+                <div class="col-md-12">
+                    <label class="form-label">Đơn hàng khách hàng theo tháng/kỳ</label>
+                    <div class="order-grid">
+                        <div class="order-cell">
+                            <span>Tháng 5</span>
+                            <input type="number" class="form-control order-input" data-month="5" min="0" step="1" placeholder="0">
+                        </div>
+                        <div class="order-cell">
+                            <span>Tháng 6</span>
+                            <input type="number" class="form-control order-input" data-month="6" min="0" step="1" placeholder="0">
+                        </div>
+                        <div class="order-cell">
+                            <span>Tháng 7</span>
+                            <input type="number" class="form-control order-input" data-month="7" min="0" step="1" placeholder="0">
+                        </div>
+                        <div class="order-cell">
+                            <span>Tháng 8</span>
+                            <input type="number" class="form-control order-input" data-month="8" min="0" step="1" placeholder="0">
+                        </div>
+                        <div class="order-cell">
+                            <span>Tháng 9</span>
+                            <input type="number" class="form-control order-input" data-month="9" min="0" step="1" placeholder="0">
+                        </div>
+                        <div class="order-cell">
+                            <span>Tháng 10</span>
+                            <input type="number" class="form-control order-input" data-month="10" min="0" step="1" placeholder="0">
+                        </div>
+                        <div class="order-cell">
+                            <span>Tháng 11</span>
+                            <input type="number" class="form-control order-input" data-month="11" min="0" step="1" placeholder="0">
+                        </div>
+                        <div class="order-cell">
+                            <span>Tháng 12</span>
+                            <input type="number" class="form-control order-input" data-month="12" min="0" step="1" placeholder="0">
+                        </div>
+                    </div>
+                    <small class="text-muted d-block mt-2">Nhập số đơn hàng khách hàng cho từng tháng. Để trống nếu tháng đó không có đơn hàng.</small>
                 </div>
                 
                 <!-- Nút tính toán -->
@@ -77,21 +117,41 @@
             <div class="card-body">
                 <div style="overflow-x: auto;">
                     <table class="table table-bordered table-hover table-sm">
-                        <thead class="table-dark">
-                            <tr>
-                                <th class="text-center">Tháng</th>
-                                <th class="text-center">Nhu cầu dự báo<br/>(Demand)</th>
-                                <th class="text-center">Đơn hàng KH<br/>(Orders)</th>
-                                <th class="text-center">Sản lượng MPS<br/>(MPS)</th>
-                                <th class="text-center">Tồn kho dự báo<br/>(Projected On-hand)</th>
-                                <th class="text-center">Còn lại để bán<br/>(ATP)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="mps-tbody">
+                        <tbody id="mps-tbody" class="mps-transposed-table">
                             <!-- Dữ liệu sẽ được thêm bằng JavaScript -->
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bảng PPA Analysis (Chi tiết phân tích lô) -->
+    <div id="ppa-table-wrapper" style="display: none; margin-top: 20px;">
+        <div class="card">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">Phân tích PPA - Chi tiết xác định kích cỡ lô</h5>
+            </div>
+            <div class="card-body">
+                <div style="overflow-x: auto;">
+                    <table class="table table-bordered table-hover table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-center">k</th>
+                                <th class="text-center">i</th>
+                                <th class="text-center">Ri</th>
+                                <th class="text-center">(i-1)Ri</th>
+                                <th class="text-center">APP(T)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ppa-tbody">
+                            <!-- Dữ liệu sẽ được thêm bằng JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-muted mt-3 small">
+                    <strong>Giải thích:</strong> APP(T) được cộng dồn theo công thức APP(T) = APP(T-1) + (i-1)Ri cho từng dòng chi tiết PPA.
+                </p>
             </div>
         </div>
     </div>
@@ -122,9 +182,83 @@
     .card-header {
         font-weight: bold;
     }
+
+    .mps-transposed-table th {
+        white-space: nowrap;
+    }
+
+    .mps-transposed-table .months-header th {
+        background-color: #2f4a5e;
+        color: #ffffff;
+        font-weight: 700;
+    }
+
+    .mps-transposed-table .months-header .row-label {
+        color: #ffffff !important;
+        text-align: left;
+    }
+
+    .mps-transposed-table .row-label {
+        min-width: 140px;
+        max-width: 170px;
+        font-weight: 700;
+        background-color: #f4f6f8;
+        color: #1f2d3d !important;
+        text-align: left;
+        white-space: normal;
+    }
+
+    .mps-transposed-table td {
+        color: #243746;
+    }
+
+    .mps-value-lot {
+        color: #8a5b00;
+        font-weight: 700;
+    }
+
+    .mps-value-projected {
+        color: #1b7c45;
+        font-weight: 700;
+    }
+
+    .mps-value-atp {
+        color: #0f5f9c;
+        font-weight: 700;
+    }
+
+    .selected-lot-badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 10px;
+        background-color: #1f8f4d;
+        color: #ffffff;
+        font-size: 0.8rem;
+        font-weight: 700;
+        line-height: 1.1;
+    }
     
     .form-control, .form-select {
         border-radius: 0.375rem;
+    }
+
+    .order-grid {
+        display: grid;
+        grid-template-columns: repeat(8, minmax(100px, 1fr));
+        gap: 12px;
+        overflow-x: auto;
+        padding-top: 4px;
+    }
+
+    .order-cell {
+        min-width: 100px;
+    }
+
+    .order-cell span {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.9rem;
+        font-weight: 600;
     }
     
     button:disabled {
@@ -134,13 +268,114 @@
 </style>
 
 <script>
+const MPS_INPUT_STORAGE_KEY = 'inventory.mps.lastInput';
+const MPS_RESULT_STORAGE_KEY = 'inventory.mps.lastResult';
+
+function parseNumberOrDefault(value, defaultValue = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : defaultValue;
+}
+
+function collectFormState() {
+    return {
+        product_code: document.getElementById('product_code').value,
+        setup_cost: document.getElementById('setup_cost').value,
+        holding_cost: document.getElementById('holding_cost').value,
+        begin_inventory: document.getElementById('begin_inventory').value,
+        orders: Array.from(document.querySelectorAll('.order-input')).map(input => input.value),
+        saved_at: new Date().toISOString()
+    };
+}
+
+function saveFormState() {
+    try {
+        localStorage.setItem(MPS_INPUT_STORAGE_KEY, JSON.stringify(collectFormState()));
+    } catch (error) {
+        console.warn('Khong the luu input MPS vao localStorage:', error);
+    }
+}
+
+function restoreFormState() {
+    try {
+        const raw = localStorage.getItem(MPS_INPUT_STORAGE_KEY);
+        if (!raw) return;
+
+        const saved = JSON.parse(raw);
+        if (!saved || typeof saved !== 'object') return;
+
+        if (saved.product_code != null) {
+            document.getElementById('product_code').value = saved.product_code;
+        }
+        if (saved.setup_cost != null) {
+            document.getElementById('setup_cost').value = saved.setup_cost;
+        }
+        if (saved.holding_cost != null) {
+            document.getElementById('holding_cost').value = saved.holding_cost;
+        }
+        if (saved.begin_inventory != null) {
+            document.getElementById('begin_inventory').value = saved.begin_inventory;
+        }
+
+        const orderInputs = Array.from(document.querySelectorAll('.order-input'));
+        if (Array.isArray(saved.orders)) {
+            orderInputs.forEach((input, index) => {
+                input.value = saved.orders[index] ?? '';
+            });
+        }
+    } catch (error) {
+        console.warn('Khong the khoi phuc input MPS tu localStorage:', error);
+    }
+}
+
+function saveResultState(result) {
+    try {
+        localStorage.setItem(MPS_RESULT_STORAGE_KEY, JSON.stringify({
+            result,
+            saved_at: new Date().toISOString()
+        }));
+    } catch (error) {
+        console.warn('Khong the luu ket qua MPS vao localStorage:', error);
+    }
+}
+
+function restoreResultState() {
+    try {
+        const raw = localStorage.getItem(MPS_RESULT_STORAGE_KEY);
+        if (!raw) return;
+
+        const saved = JSON.parse(raw);
+        if (!saved || !saved.result || !saved.result.success) return;
+
+        displayResults(saved.result);
+    } catch (error) {
+        console.warn('Khong the khoi phuc ket qua MPS tu localStorage:', error);
+    }
+}
+
+function initMpsStatePersistence() {
+    restoreFormState();
+    restoreResultState();
+
+    document.getElementById('product_code').addEventListener('change', saveFormState);
+    document.getElementById('setup_cost').addEventListener('input', saveFormState);
+    document.getElementById('holding_cost').addEventListener('input', saveFormState);
+    document.getElementById('begin_inventory').addEventListener('input', saveFormState);
+    document.querySelectorAll('.order-input').forEach(input => {
+        input.addEventListener('input', saveFormState);
+    });
+}
+
 document.getElementById('run-mps-btn').addEventListener('click', function() {
-    const productId = document.getElementById('product_id').value;
+    const productCode = document.getElementById('product_code').value;
     const setupCost = document.getElementById('setup_cost').value;
     const holdingCost = document.getElementById('holding_cost').value;
     const beginInventory = document.getElementById('begin_inventory').value;
+    const orders = Array.from(document.querySelectorAll('.order-input')).map(input => {
+        const value = input.value.trim();
+        return value === '' ? null : parseInt(value, 10);
+    });
     
-    if (!productId) {
+    if (!productCode) {
         showError('Vui lòng chọn sản phẩm');
         return;
     }
@@ -149,11 +384,12 @@ document.getElementById('run-mps-btn').addEventListener('click', function() {
         showError('Vui lòng nhập chi phí thiết lập và chi phí lưu kho');
         return;
     }
-    
-    runMPS(productId, setupCost, holdingCost, beginInventory);
+
+    saveFormState();
+    runMPS(productCode, setupCost, holdingCost, beginInventory, orders);
 });
 
-function runMPS(productId, C, H, beginInventory) {
+function runMPS(productCode, C, H, beginInventory, orders) {
     const btn = document.getElementById('run-mps-btn');
     const spinner = document.getElementById('loading-spinner');
     const errorAlert = document.getElementById('error-alert');
@@ -163,10 +399,11 @@ function runMPS(productId, C, H, beginInventory) {
     errorAlert.style.display = 'none';
     
     const payload = {
-        product_id: parseInt(productId),
-        C: parseFloat(C),
-        H: parseFloat(H),
-        begin_inventory: parseFloat(beginInventory)
+        product_code: productCode,
+        C: parseNumberOrDefault(C, 0),
+        H: parseNumberOrDefault(H, 0),
+        begin_inventory: parseNumberOrDefault(beginInventory, 0),
+        orders: orders
     };
     
     fetch('/api/mps/run/', {
@@ -189,6 +426,7 @@ function runMPS(productId, C, H, beginInventory) {
         
         if (result.success) {
             displayResults(result);
+            saveResultState(result);
         }
     })
     .catch(error => {
@@ -207,20 +445,84 @@ function displayResults(result) {
     const tbody = document.getElementById('mps-tbody');
     tbody.innerHTML = '';
     
-    result.data.forEach(row => {
+    const months = result.data.map(row => row.month);
+
+    // Tạo mảng các chỉ tiêu để render theo hàng (hỗ trợ chỉ tiêu có giá trị riêng 'values')
+    const beginInvRaw = document.getElementById('begin_inventory') ? document.getElementById('begin_inventory').value : null;
+    const beginInv = parseNumberOrDefault(beginInvRaw, 0);
+
+    const prevInventories = result.data.map((row, idx) => {
+        if (idx === 0) return beginInv;
+        return Number(result.data[idx - 1].projected_on_hand ?? 0);
+    });
+
+    const metricRows = [
+        { label: 'Tồn kho từ tháng trước', key: null, values: prevInventories, valueClass: '' },
+        { label: 'Nhu cầu dự báo (Demand)', key: 'demand', valueClass: '' },
+        { label: 'Đơn hàng KH (Orders)', key: 'orders', valueClass: '' },
+        { label: 'Tồn kho trước MPS (Net Inventory)', key: 'net_inventory', valueClass: '' },
+        { label: 'Cỡ lô sản xuất (Lot Size)', key: 'lot_size', valueClass: 'mps-value-lot' },
+        { label: 'Tồn kho dự kiến (Projected On-hand)', key: 'projected_on_hand', valueClass: 'mps-value-projected' },
+        { label: 'Còn lại để bán (ATP)', key: 'atp', valueClass: 'mps-value-atp' }
+    ];
+
+    const monthHeader = document.createElement('tr');
+    monthHeader.className = 'months-header';
+    monthHeader.innerHTML = `
+        <th class="text-center row-label">Chỉ tiêu</th>
+        ${months.map(month => `<th class="text-center">Tháng ${month}</th>`).join('')}
+    `;
+    tbody.appendChild(monthHeader);
+
+    metricRows.forEach(metric => {
         const tr = document.createElement('tr');
+        const values = result.data.map((row, idx) => {
+            let val = 0;
+            if (Array.isArray(metric.values)) {
+                val = Number(metric.values[idx] ?? 0);
+            } else if (metric.key) {
+                val = Number(row[metric.key] ?? 0);
+            }
+
+            const cls = metric.valueClass ? ` class="text-center ${metric.valueClass}"` : ' class="text-center"';
+            return `<td${cls}>${val.toLocaleString()}</td>`;
+        }).join('');
+
         tr.innerHTML = `
-            <td class="text-center"><strong>Tháng ${row.month}</strong></td>
-            <td class="text-center">${row.demand.toLocaleString()}</td>
-            <td class="text-center">${row.orders.toLocaleString()}</td>
-            <td class="text-center"><strong class="text-success">${row.mps.toLocaleString()}</strong></td>
-            <td class="text-center">${row.projected_on_hand.toLocaleString()}</td>
-            <td class="text-center"><strong class="text-info">${row.atp.toLocaleString()}</strong></td>
+            <th class="row-label">${metric.label}</th>
+            ${values}
         `;
         tbody.appendChild(tr);
     });
     
     document.getElementById('mps-table-wrapper').style.display = 'block';
+    
+    // Hiển thị bảng PPA Analysis (chi tiết theo từng k/i)
+    if (result.ppa_steps && result.ppa_steps.length > 0) {
+        const ppaTbody = document.getElementById('ppa-tbody');
+        ppaTbody.innerHTML = '';
+
+        const toSafeNumber = (value) => {
+            const num = Number(value);
+            return Number.isFinite(num) ? num : 0;
+        };
+
+        // Header - will be rendered in the template head; here we just append rows
+        result.ppa_steps.forEach(step => {
+            const appValue = toSafeNumber(step['APP(T)'] ?? step.APP_T ?? step.app_t ?? step.appT);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="text-center"><strong>${step.k}</strong></td>
+                <td class="text-center">${step.i}</td>
+                <td class="text-center">${toSafeNumber(step.Ri).toLocaleString()}</td>
+                <td class="text-center">${toSafeNumber(step['(i-1)Ri']).toLocaleString()}</td>
+                <td class="text-center">${appValue.toLocaleString()}</td>
+            `;
+            ppaTbody.appendChild(tr);
+        });
+
+        document.getElementById('ppa-table-wrapper').style.display = 'block';
+    }
 }
 
 function showError(message) {
@@ -228,6 +530,7 @@ function showError(message) {
     document.getElementById('error-alert').style.display = 'block';
     document.getElementById('mps-table-wrapper').style.display = 'none';
     document.getElementById('epp-result').style.display = 'none';
+    document.getElementById('ppa-table-wrapper').style.display = 'none';
 }
 
 function getCookie(name) {
@@ -244,5 +547,7 @@ function getCookie(name) {
     }
     return cookieValue;
 }
+
+initMpsStatePersistence();
 </script>
 {% endblock %}
