@@ -803,8 +803,20 @@ def save_planning_config(request):
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def product_decomposition(request):
-    start_month = '2025-05-01'
-    forecast_mean, forecast_std, forecast_list, mae, rmse, mape = forecast_monthly_total()
+    from .models import MonthlyProductionData
+
+    history_qs = MonthlyProductionData.objects.filter(
+        source=MonthlyProductionData.SOURCE_PLANNING
+    ).order_by('month')
+
+    forecast_mean, forecast_std, forecast_list, mae, rmse, mape = forecast_monthly_total(history_qs=history_qs)
+
+    if history_qs.exists():
+        start_month = pd.Timestamp(history_qs.last().month).to_period('M').to_timestamp() + pd.DateOffset(months=1)
+    else:
+        start_month = pd.Timestamp('2025-05-01')
+
+    start_month = pd.Timestamp(start_month).to_period('M').to_timestamp()
     months = list(pd.date_range(start=start_month, periods=len(forecast_list), freq='MS'))
 
     forecast_map = {
@@ -1052,6 +1064,8 @@ def run_mps_api(request):
     
     try:
         import json
+        from .models import MonthlyProductionData
+
         data = json.loads(request.body)
         
         product_code = str(data.get('product_code') or '').strip()
@@ -1067,14 +1081,24 @@ def run_mps_api(request):
         if product_code and not product_code.isdigit():
             ratio_rows = list(ProductRatio.objects.filter(product_code=product_code).order_by('month'))
             demand = [int(round(row.forecast_qty or 0)) for row in ratio_rows]
-            month_labels = [row.month.strftime('%m/%Y') for row in ratio_rows]
+            history_qs = MonthlyProductionData.objects.filter(
+                source=MonthlyProductionData.SOURCE_PLANNING
+            ).order_by('month')
 
-            if ratio_rows:
-                start_month = pd.Timestamp(ratio_rows[0].month).to_period('M').to_timestamp()
-                input_labels = [
+            if history_qs.exists():
+                start_month = pd.Timestamp(history_qs.last().month).to_period('M').to_timestamp() + pd.DateOffset(months=1)
+                month_labels = [
                     (start_month + pd.DateOffset(months=index)).strftime('%m/%Y')
-                    for index in range(12)
+                    for index in range(len(demand))
                 ]
+                input_labels = month_labels[:]
+            elif ratio_rows:
+                start_month = pd.Timestamp(ratio_rows[0].month).to_period('M').to_timestamp()
+                month_labels = [
+                    (start_month + pd.DateOffset(months=index)).strftime('%m/%Y')
+                    for index in range(len(demand))
+                ]
+                input_labels = month_labels[:]
         else:
             demand = get_demand_by_product(product_code)
 

@@ -98,16 +98,23 @@
   background: #fff;
   text-align: center;
 }
+.matrix-table input[type="text"],
 .matrix-table input[type="number"] {
-  width: 88px;
   border: 1px solid #cfdce3;
-  border-radius: 10px;
-  padding: 7px 9px;
-  text-align: right;
+  border-radius: 14px;
+  padding: 7px 11px;
   font-size: 14px;
   color: #173b4d;
   background: #fbfdfe;
 }
+.matrix-table input[type="text"] {
+  width: 100%;
+}
+.matrix-table input[type="number"] {
+  width: 88px;
+  text-align: right;
+}
+.matrix-table input[type="text"]:focus,
 .matrix-table input[type="number"]:focus {
   outline: none;
   border-color: #4e8ca1;
@@ -231,26 +238,7 @@
     </p>
   </div>
 
-  <div class="disagg-panel">
-    <div class="metrics-grid">
-      <div class="metric-card">
-        <span class="label">Tổng forecast 8 tháng</span>
-        <div class="value">{{ forecast_total|floatformat:0 }}</div>
-      </div>
-      <div class="metric-card">
-        <span class="label">Dòng kế hoạch đã lưu</span>
-        <div class="value">{{ saved_product_count }}</div>
-      </div>
-      <div class="metric-card">
-        <span class="label">MAE</span>
-        <div class="value">{{ mae|floatformat:2 }}</div>
-      </div>
-      <div class="metric-card">
-        <span class="label">MAPE</span>
-        <div class="value">{{ mape|floatformat:2 }}%</div>
-      </div>
-    </div>
-  </div>
+  
 
   <div class="disagg-panel">
     <h2>Hướng dẫn nhập tỷ lệ</h2>
