@@ -183,6 +183,7 @@
                 <th>Lot policy</th>
                 <th>Lot size</th>
                 <th>Safety stock</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -203,6 +204,14 @@
                 <td>{{ item.get_lot_policy_display }}</td>
                 <td>{{ item.lot_size }}</td>
                 <td>{{ item.safety_stock }}</td>
+                  <td class="actions-cell">
+                    <form method="post" onsubmit="return confirm('Xác nhận xóa master item {{ item.item_code }}?');">
+                      {% csrf_token %}
+                      <input type="hidden" name="action_type" value="delete_planning_item" />
+                      <input type="hidden" name="item_code" value="{{ item.item_code }}" />
+                      <button type="submit" class="btn-secondary" style="padding:6px 10px;">Xóa</button>
+                    </form>
+                  </td>
               </tr>
               {% endfor %}
             </tbody>

@@ -1,4 +1,4 @@
-from django.shortcuts import render, redirect, get_object_or_404
+﻿from django.shortcuts import render, redirect, get_object_or_404
 from functools import wraps
 from django.contrib.auth import authenticate, login, logout, get_user_model
 from django.contrib import messages
@@ -9,9 +9,9 @@ import re
 import numpy as np
 import pandas as pd
 from openpyxl import Workbook, load_workbook
-from .models import Product, Material, SalesData, Transaction, BOM, ProductRatio, DisaggregatedPlan, CustomerOrder, MPSConfiguration, SelectedProductForMPS
-from .forms import ImportDataForm, MonthlyForecastImportForm, TransactionForm
-from .services import aggregate_material_demand, abc_classification, disaggregate_forecast, forecast_monthly_total, forecast_product, forecast_product_monthly, run_dss, get_demand_by_product, get_orders_by_product, ppa_lot_sizing, calculate_mps
+from .models import Product, Material, SalesData, Transaction, BOM, ProductRatio, DisaggregatedPlan, CustomerOrder, MPSConfiguration, SelectedProductForMPS, PlanningItem, MultiLevelBOMEdge
+from .forms import ImportDataForm, MonthlyForecastImportForm, TransactionForm, PlanningItemForm
+from .services import aggregate_material_demand, abc_classification, disaggregate_forecast, forecast_monthly_total, forecast_product, forecast_product_monthly, run_dss, get_demand_by_product, get_orders_by_product, ppa_lot_sizing, calculate_mps, calculate_mrp_plan
 from .recommendations import build_dashboard_recommendations, build_inventory_alert_recommendations, build_inventory_watchlist_recommendations
 from datetime import datetime, timedelta, date
 from .permissions import (
@@ -32,29 +32,29 @@ from .permissions import (
 
 def allocate_overtime(shortage, regular, alpha_percent=20):
     """
-    Phân bổ tăng ca (OT) tập trung vào giữa shortage window
+    Ph├ón bß╗ò t─âng ca (OT) tß║¡p trung v├áo giß╗»a shortage window
 
     Parameters:
-    - shortage: list[int/float]  (thiếu hàng theo tháng)
-    - regular:  list[int/float]  (sản lượng giờ thường)
-    - alpha_percent: int/float   (% OT max, ví dụ 20)
+    - shortage: list[int/float]  (thiß║┐u h├áng theo th├íng)
+    - regular:  list[int/float]  (sß║ún l╞░ß╗úng giß╗¥ th╞░ß╗¥ng)
+    - alpha_percent: int/float   (% OT max, v├¡ dß╗Ñ 20)
 
     Returns:
-    - OT: list[float] (tăng ca từng tháng)
+    - OT: list[float] (t─âng ca tß╗½ng th├íng)
     """
 
     # ===== 1. Validate input =====
     if len(shortage) != len(regular):
-        raise ValueError("shortage và regular phải cùng độ dài")
+        raise ValueError("shortage v├á regular phß║úi c├╣ng ─æß╗Ö d├ái")
 
     if alpha_percent < 0 or alpha_percent > 50:
-        raise ValueError("alpha nên nằm trong khoảng 0–50 (%)")
+        raise ValueError("alpha n├¬n nß║▒m trong khoß║úng 0ΓÇô50 (%)")
 
     alpha = alpha_percent / 100
     n = len(shortage)
     OT = np.zeros(n)
 
-    # ===== 2. Xác định shortage window =====
+    # ===== 2. X├íc ─æß╗ïnh shortage window =====
     shortage_indices = [i for i in range(n) if shortage[i] > 0]
 
     if not shortage_indices:
@@ -62,12 +62,12 @@ def allocate_overtime(shortage, regular, alpha_percent=20):
     start = min(shortage_indices)
     end = max(shortage_indices)
 
-    # ===== 3. Tính center =====
+    # ===== 3. T├¡nh center =====
     center = (start + end) / 2
 
-    # ===== 4. Tạo weight (Gaussian mượt hơn) =====
+    # ===== 4. Tß║ío weight (Gaussian m╞░ß╗út h╞ín) =====
     weights = np.zeros(n)
-    sigma = max((end - start) / 2, 1)  # tránh chia 0
+    sigma = max((end - start) / 2, 1)  # tr├ính chia 0
 
     for t in range(start, end + 1):
         distance = abs(t - center)
@@ -80,10 +80,10 @@ def allocate_overtime(shortage, regular, alpha_percent=20):
 
     weights = weights / total_weight
 
-    # ===== 5. Tổng shortage cần bù =====
+    # ===== 5. Tß╗òng shortage cß║ºn b├╣ =====
     total_shortage = sum(shortage)
 
-    # ===== 6. Phân bổ OT =====
+    # ===== 6. Ph├ón bß╗ò OT =====
     for t in range(start, end + 1):
         max_ot = alpha * regular[t]
         ot_alloc = weights[t] * total_shortage
@@ -95,23 +95,23 @@ def allocate_overtime(shortage, regular, alpha_percent=20):
 
 def is_feasible(demand, regular, alpha):
     """
-    Kiểm tra khả năng thực hiện kế hoạch.
+    Kiß╗âm tra khß║ú n─âng thß╗▒c hiß╗çn kß║┐ hoß║ích.
 
-    In cảnh báo nếu tổng capacity không đủ đáp ứng tổng demand.
+    In cß║únh b├ío nß║┐u tß╗òng capacity kh├┤ng ─æß╗º ─æ├íp ß╗⌐ng tß╗òng demand.
     
     Parameters:
-    - demand: list (tổng nhu cầu)
-    - regular: list (sản lượng giờ thường theo tháng)
-    - alpha: float (% OT max so với regular)
+    - demand: list (tß╗òng nhu cß║ºu)
+    - regular: list (sß║ún l╞░ß╗úng giß╗¥ th╞░ß╗¥ng theo th├íng)
+    - alpha: float (% OT max so vß╗¢i regular)
     
     Returns:
-    - bool: True nếu khả thi, False nếu không
+    - bool: True nß║┐u khß║ú thi, False nß║┐u kh├┤ng
     """
     total_capacity = sum(regular) + sum(alpha * r for r in regular)
     total_demand = sum(demand)
 
     if total_capacity < total_demand:
-        print("❌ KHÔNG KHẢ THI")
+        print("Γ¥î KH├öNG KHß║ó THI")
         return False
 
     return True
@@ -119,18 +119,18 @@ def is_feasible(demand, regular, alpha):
 
 def optimize_aggregate_plan_lp(demand, regular_caps, cost_params, alpha=0.2, safety_stock=0):
     """
-    Giải Aggregate Planning bằng Linear Programming.
+    Giß║úi Aggregate Planning bß║▒ng Linear Programming.
     
     Parameters:
-    - demand: list (nhu cầu từng tháng)
-    - regular_caps: list (capacity giờ thường)
+    - demand: list (nhu cß║ºu tß╗½ng th├íng)
+    - regular_caps: list (capacity giß╗¥ th╞░ß╗¥ng)
     - cost_params: dict (regular_cost, overtime_cost, subcontract_cost, inventory_cost, backorder_cost)
     - alpha: float (OT limit, e.g., 0.2 = 20%)
     - safety_stock: float (minimum inventory level, not for final period)
     
     Returns:
-    - result: list[dict] với keys: regular, overtime, subcontract, inventory, backlog cho mỗi tháng
-    - status hoặc total_cost
+    - result: list[dict] vß╗¢i keys: regular, overtime, subcontract, inventory, backlog cho mß╗ùi th├íng
+    - status hoß║╖c total_cost
     """
     import pulp
     
@@ -209,30 +209,30 @@ def optimize_aggregate_plan_lp(demand, regular_caps, cost_params, alpha=0.2, saf
 
 def find_best_ot_alpha(demand_rows, regular_caps, cost_params, safety_stock=0):
     """
-    Tìm OT limit tối ưu (0-50%) với min total cost.
-    Chạy LP mỗi lần thử alpha để tìm min cost solution.
+    T├¼m OT limit tß╗æi ╞░u (0-50%) vß╗¢i min total cost.
+    Chß║íy LP mß╗ùi lß║ºn thß╗¡ alpha ─æß╗â t├¼m min cost solution.
     
     Parameters:
-    - demand_rows: list (nhu cầu mỗi tháng)
-    - regular_caps: list (capacity giờ thường mỗi tháng)
+    - demand_rows: list (nhu cß║ºu mß╗ùi th├íng)
+    - regular_caps: list (capacity giß╗¥ th╞░ß╗¥ng mß╗ùi th├íng)
     - cost_params: dict (regular_cost, overtime_cost, subcontract_cost, inventory_cost, backorder_cost)
     - safety_stock: float (minimum inventory level)
     
     Returns:
-    - best_alpha: float (% OT tối ưu, từ 0 đến 0.5)
-    - best_cost: float (tổng cost tối ưu)
+    - best_alpha: float (% OT tß╗æi ╞░u, tß╗½ 0 ─æß║┐n 0.5)
+    - best_cost: float (tß╗òng cost tß╗æi ╞░u)
     """
     best_cost = float('inf')
     best_alpha = 0.0
     
-    # Thử từ 0% → 50% (bước 2%)
+    # Thß╗¡ tß╗½ 0% ΓåÆ 50% (b╞░ß╗¢c 2%)
     for alpha_pct in range(0, 51, 2):
         alpha = alpha_pct / 100.0
         
-        # Chạy LP với alpha này
+        # Chß║íy LP vß╗¢i alpha n├áy
         result, total_cost = optimize_aggregate_plan_lp(demand_rows, regular_caps, cost_params, alpha=alpha, safety_stock=safety_stock)
         
-        # Nếu không có feasible solution, skip
+        # Nß║┐u kh├┤ng c├│ feasible solution, skip
         if result is None:
             continue
         
@@ -298,7 +298,7 @@ def plan_synthesis(request):
     else:
         for idx, value in enumerate(forecast_8, start=1):
             forecast_rows.append({
-                'month': f'Tháng {idx}',
+                'month': f'Th├íng {idx}',
                 'quantity': int(math.ceil(float(value or 0))),
             })
 
@@ -383,11 +383,11 @@ def plan_synthesis(request):
     feasibility_ok = False
     feasibility_message = None
     
-    # Nếu ot_limit_pct = 0 → tìm optimal alpha
+    # Nß║┐u ot_limit_pct = 0 ΓåÆ t├¼m optimal alpha
     if ot_limit_pct <= 0:
         alpha_ot, _ = find_best_ot_alpha(demand_rows, regular_caps, cost_params, safety_stock=safety_stock)
         ot_limit_pct = alpha_ot * 100.0
-        # Recalculate OT capacity với alpha tối ưu
+        # Recalculate OT capacity vß╗¢i alpha tß╗æi ╞░u
         for idx in range(len(demand_rows)):
             month_regular_capacity = regular_caps[idx]
             month_overtime_capacity = max(0, int(math.floor(month_regular_capacity * ot_limit_pct / 100.0 + 1e-9)))
@@ -409,7 +409,7 @@ def plan_synthesis(request):
     total_workforce_layoff_cost = 0.0
     total_cost = 0.0
     
-    # Kiểm tra nếu LP không có feasible solution
+    # Kiß╗âm tra nß║┐u LP kh├┤ng c├│ feasible solution
     if lp_result is None:
         # Return error page with status message
         return render(request, 'inventory/plan_synthesis.html', {
@@ -421,7 +421,7 @@ def plan_synthesis(request):
             'planning_metrics': [],
             'cost_breakdown': [],
             'workforce_summary': [],
-            'error_message': f'Kế hoạch không khả thi ({status_or_cost}). Hãy tăng OT limit hoặc bật subcontract.',
+            'error_message': f'Kß║┐ hoß║ích kh├┤ng khß║ú thi ({status_or_cost}). H├úy t─âng OT limit hoß║╖c bß║¡t subcontract.',
             'feasibility_ok': False,
         })
     
@@ -429,7 +429,7 @@ def plan_synthesis(request):
     lp_cost = status_or_cost
     feasibility_ok = True
     
-    # === Build plan_rows từ LP result ===
+    # === Build plan_rows tß╗½ LP result ===
     plan_rows = []
     
     for idx, demand_qty in enumerate(demand_rows):
@@ -448,7 +448,7 @@ def plan_synthesis(request):
         
         total_production = regular_qty + overtime_qty + subcontract_qty
         
-        # Tính beginning inventory từ LP
+        # T├¡nh beginning inventory tß╗½ LP
         if idx == 0:
             beginning_inventory = int(math.ceil(opening_inventory))
         else:
@@ -518,27 +518,27 @@ def plan_synthesis(request):
     workforce_total_change = sum(workforce_adjustments)
     workforce_end = workers + workforce_total_change
     workforce_cost = total_workforce_hire_cost + total_workforce_layoff_cost
-    workforce_action = 'Ổn định'
+    workforce_action = 'ß╗ön ─æß╗ïnh'
     if workforce_total_change > 0:
-        workforce_action = 'Tuyển thêm'
+        workforce_action = 'Tuyß╗ân th├¬m'
     elif workforce_total_change < 0:
-        workforce_action = 'Sa thải'
+        workforce_action = 'Sa thß║úi'
 
     summary_cards = [
         {
-            'label': 'Tổng chi phí',
+            'label': 'Tß╗òng chi ph├¡',
             'value': int(round(total_cost)),
         },
         {
-            'label': 'Sản lượng thường',
+            'label': 'Sß║ún l╞░ß╗úng th╞░ß╗¥ng',
             'value': int(total_regular),
         },
         {
-            'label': 'Làm thêm giờ',
+            'label': 'L├ám th├¬m giß╗¥',
             'value': int(total_overtime),
         },
         {
-            'label': 'Thuê ngoài',
+            'label': 'Thu├¬ ngo├ái',
             'value': int(total_subcontract),
         },
     ]
@@ -553,30 +553,30 @@ def plan_synthesis(request):
 
     planning_metrics = [
         {
-            'label': 'DỰ BÁO',
+            'label': 'Dß╗░ B├üO',
             'is_group': False,
             'integer_values': True,
             'values': [int(row['forecast']) for row in plan_rows],
             'total': int(sum(row['forecast'] for row in plan_rows)),
         },
         {
-            'label': 'SẢN LƯỢNG',
+            'label': 'Sß║óN L╞»ß╗óNG',
             'is_group': True,
             'items': [
                 {
-                    'label': 'Giờ thường',
+                    'label': 'Giß╗¥ th╞░ß╗¥ng',
                     'integer_values': True,
                     'values': [int(row['regular']) for row in plan_rows],
                     'total': int(total_regular),
                 },
                 {
-                    'label': 'Tăng ca',
+                    'label': 'T─âng ca',
                     'integer_values': True,
                     'values': [int(row['overtime']) for row in plan_rows],
                     'total': int(total_overtime),
                 },
                 {
-                    'label': 'Thuê ngoài',
+                    'label': 'Thu├¬ ngo├ái',
                     'integer_values': True,
                     'values': [int(row['subcontract']) for row in plan_rows],
                     'total': int(total_subcontract),
@@ -584,36 +584,36 @@ def plan_synthesis(request):
             ]
         },
         {
-            'label': 'SẢN LƯỢNG – DỰ BÁO',
+            'label': 'Sß║óN L╞»ß╗óNG ΓÇô Dß╗░ B├üO',
             'is_group': False,
             'integer_values': True,
             'values': [int(row['production'] - row['forecast']) for row in plan_rows],
             'total': int(sum((row['production'] - row['forecast']) for row in plan_rows)),
         },
         {
-            'label': 'TỒN KHO',
+            'label': 'Tß╗ÆN KHO',
             'is_group': True,
             'items': [
                 {
-                    'label': 'Tồn đầu kỳ',
+                    'label': 'Tß╗ôn ─æß║ºu kß╗│',
                     'integer_values': True,
                     'values': [int(row['beginning_inventory']) for row in plan_rows],
                     'total': None,
                 },
                 {
-                    'label': 'Tồn cuối kỳ',
+                    'label': 'Tß╗ôn cuß╗æi kß╗│',
                     'integer_values': True,
                     'values': [int(row['ending_inventory']) for row in plan_rows],
                     'total': None,
                 },
                 {
-                    'label': 'Tồn trung bình',
+                    'label': 'Tß╗ôn trung b├¼nh',
                     'integer_values': True,
                     'values': [int(row['average_inventory']) for row in plan_rows],
                     'total': None,
                 },
                 {
-                    'label': 'Thiếu hàng',
+                    'label': 'Thiß║┐u h├áng',
                     'integer_values': True,
                     'values': [int(row['backorder']) for row in plan_rows],
                     'total': int(sum(row['backorder'] for row in plan_rows)),
@@ -621,33 +621,33 @@ def plan_synthesis(request):
             ]
         },
         {
-            'label': 'CHI PHÍ',
+            'label': 'CHI PH├ì',
             'is_group': True,
             'items': [
                 {
-                    'label': 'Chi phí sản xuất',
+                    'label': 'Chi ph├¡ sß║ún xuß║Ñt',
                     'is_subgroup': True,
                     'items': [
                         {
-                            'label': 'Giờ thường',
+                            'label': 'Giß╗¥ th╞░ß╗¥ng',
                             'integer_values': True,
                             'values': [int(round(row['regular_cost'])) for row in plan_rows],
                             'total': int(round(total_regular_cost)),
                         },
                         {
-                            'label': 'Tăng ca',
+                            'label': 'T─âng ca',
                             'integer_values': True,
                             'values': [int(round(row['overtime_cost'])) for row in plan_rows],
                             'total': int(round(total_overtime_cost)),
                         },
                         {
-                            'label': 'Thuê ngoài',
+                            'label': 'Thu├¬ ngo├ái',
                             'integer_values': True,
                             'values': [int(round(row['subcontract_cost'])) for row in plan_rows],
                             'total': int(round(total_subcontract_cost)),
                         },
                         {
-                            'label': 'Tuyển dụng/Sa thải',
+                            'label': 'Tuyß╗ân dß╗Ñng/Sa thß║úi',
                             'editable': True,
                             'values': [int(row['workforce_change']) for row in plan_rows],
                             'total': int(round(sum(row['workforce_change'] for row in plan_rows))),
@@ -655,19 +655,19 @@ def plan_synthesis(request):
                     ]
                 },
                 {
-                    'label': 'Chi phí tồn kho',
+                    'label': 'Chi ph├¡ tß╗ôn kho',
                     'integer_values': True,
                     'values': [int(round(row['inventory_cost'])) for row in plan_rows],
                     'total': int(round(total_inventory_cost)),
                 },
                 {
-                    'label': 'Chi phí thiếu hàng',
+                    'label': 'Chi ph├¡ thiß║┐u h├áng',
                     'integer_values': True,
                     'values': [int(round(row['backorder_cost'])) for row in plan_rows],
                     'total': int(round(total_backorder_cost)),
                 },
                 {
-                    'label': 'Tổng chi phí',
+                    'label': 'Tß╗òng chi ph├¡',
                     'integer_values': True,
                     'values': [int(round(row['total_cost'])) for row in plan_rows],
                     'total': int(round(total_cost)),
@@ -679,7 +679,7 @@ def plan_synthesis(request):
     first_plan_row = plan_rows[0] if plan_rows else {}
 
     return render(request, 'inventory/plan_synthesis.html', {
-        'title': 'Kế hoạch tổng hợp',
+        'title': 'Kß║┐ hoß║ích tß╗òng hß╗úp',
         'history_rows': history_rows,
         'forecast_rows': forecast_rows,
         'plan_rows': plan_rows,
@@ -711,7 +711,7 @@ def plan_synthesis(request):
         'workforce_end': workforce_end,
         'workforce_adjustments': workforce_adjustments,
         'feasibility_ok': feasibility_ok,
-        'feasibility_message': None if feasibility_ok else '❌ KHÔNG KHẢ THI: tổng capacity hiện tại nhỏ hơn tổng demand, nên kế hoạch vẫn thiếu hàng.',
+        'feasibility_message': None if feasibility_ok else 'Γ¥î KH├öNG KHß║ó THI: tß╗òng capacity hiß╗çn tß║íi nhß╗Å h╞ín tß╗òng demand, n├¬n kß║┐ hoß║ích vß║½n thiß║┐u h├áng.',
         'error_message': None,
         'forecast_note': 'OT limit = OT_t <= alpha x regular capacity. If overtime cost is blank, overtime is disabled. If subcontract cost is blank, subcontract is disabled. Inventory policy is treated as an upper limit I_t <= I_max. Production quantities are rounded to whole units.',
         'forecast_total': round(sum(item['quantity'] for item in forecast_rows), 2),
@@ -794,7 +794,7 @@ def save_planning_config(request):
         return JsonResponse({
             'success': True,
             'action': action,
-            'message': f'Dữ liệu kế hoạch đã được lưu thành công!'
+            'message': f'Dß╗» liß╗çu kß║┐ hoß║ích ─æ├ú ─æ╞░ß╗úc l╞░u th├ánh c├┤ng!'
         })
     
     except Exception as e:
@@ -884,7 +884,7 @@ def product_decomposition(request):
                 continue
 
             if not product_code:
-                month_warnings.append(f'Hàng {row_index + 1}: cần nhập ID_P')
+                month_warnings.append(f'H├áng {row_index + 1}: cß║ºn nhß║¡p ID_P')
                 continue
 
             if not product_name:
@@ -921,24 +921,24 @@ def product_decomposition(request):
                 )
                 month_ratio_total += ratio
 
-            # Lưu product được chọn vào SelectedProductForMPS (cho trang MPS)
+            # L╞░u product ─æ╞░ß╗úc chß╗ìn v├áo SelectedProductForMPS (cho trang MPS)
             try:
-                # Tìm product theo source_id (product_code)
+                # T├¼m product theo source_id (product_code)
                 product = Product.objects.get(source_id=product_code)
                 SelectedProductForMPS.objects.get_or_create(product=product)
             except Product.DoesNotExist:
-                pass  # Nếu product không tìm thấy, bỏ qua
+                pass  # Nß║┐u product kh├┤ng t├¼m thß║Ñy, bß╗Å qua
 
             if not math.isclose(month_ratio_total, 1.0, abs_tol=0.05):
-                month_warnings.append(f'{product_code}: tổng ratio = {month_ratio_total:.2f}')
+                month_warnings.append(f'{product_code}: tß╗òng ratio = {month_ratio_total:.2f}')
 
         if month_warnings:
             messages.warning(
                 request,
-                'Đã lưu kế hoạch phân rã, nhưng một số tháng chưa có tổng ratio bằng 1.00: ' + '; '.join(month_warnings)
+                '─É├ú l╞░u kß║┐ hoß║ích ph├ón r├ú, nh╞░ng mß╗Öt sß╗æ th├íng ch╞░a c├│ tß╗òng ratio bß║▒ng 1.00: ' + '; '.join(month_warnings)
             )
         else:
-            messages.success(request, 'Lưu kế hoạch phân rã thành công')
+            messages.success(request, 'L╞░u kß║┐ hoß║ích ph├ón r├ú th├ánh c├┤ng')
 
         return redirect('product-decomposition')
 
@@ -1040,6 +1040,147 @@ def product_decomposition(request):
 
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def mrp(request):
+    planning_items = PlanningItem.objects.all().order_by('item_code')
+    bom_code_options = sorted({
+        code
+        for edge in MultiLevelBOMEdge.objects.values('root_product_code', 'parent_code', 'child_code')
+        for code in (
+            (edge.get('root_product_code') or '').strip(),
+            (edge.get('parent_code') or '').strip(),
+            (edge.get('child_code') or '').strip(),
+        )
+        if code
+    })
+    root_options = [
+        {
+            'item_code': row['product_code'],
+            'item_name': row['product_name'] or row['product_code'],
+        }
+        for row in ProductRatio.objects.values('product_code', 'product_name').order_by('product_code').distinct()
+        if row['product_code']
+    ]
+
+    def _build_planning_item_form(data=None):
+        form = PlanningItemForm(data)
+        form.fields['item_code'].widget.attrs['list'] = 'bom_code_options'
+        return form
+
+    if not root_options:
+        root_options = [
+            {
+                'item_code': item.item_code,
+                'item_name': item.item_name or item.item_code,
+            }
+            for item in planning_items.filter(item_type=PlanningItem.ITEM_TYPE_PRODUCT)
+        ]
+
+    planning_item_form = _build_planning_item_form()
+    selected_root_code = ''
+    schedule = [0.0] * 12
+    schedule_source_label = None
+    result = None
+    mrp_rows = []
+    mrp_summary = {}
+    error_message = None
+    result_message = None
+
+    last_mps_plan = request.session.get('last_mps_plan') or {}
+    if request.method != 'POST' and isinstance(last_mps_plan, dict):
+        selected_root_code = str(last_mps_plan.get('root_item_code') or '').strip().upper()
+        raw_schedule = last_mps_plan.get('mps') or []
+        for index in range(min(12, len(raw_schedule))):
+            try:
+                schedule[index] = float(raw_schedule[index] or 0)
+            except (TypeError, ValueError):
+                schedule[index] = 0.0
+        if selected_root_code and any(value > 0 for value in schedule):
+            schedule_source_label = 'Đã nạp từ MPS gần nhất'
+
+    if not selected_root_code and root_options:
+        selected_root_code = str(root_options[0]['item_code'] or '').strip().upper()
+
+    if request.method == 'POST':
+        action_type = str(request.POST.get('action_type') or '').strip()
+
+        if action_type == 'save_planning_item':
+            planning_item_form = _build_planning_item_form(request.POST)
+            if planning_item_form.is_valid():
+                item = planning_item_form.save(commit=False)
+                item.item_code = str(item.item_code or '').strip().upper()
+                item.item_name = str(item.item_name or '').strip()
+                item.remark = str(item.remark or '').strip()
+                item.save()
+                result_message = f'Đã lưu master item Planning: {item.item_code}.'
+                planning_items = PlanningItem.objects.all().order_by('item_code')
+                root_options = planning_items.filter(item_type=PlanningItem.ITEM_TYPE_PRODUCT)
+                planning_item_form = _build_planning_item_form()
+            else:
+                error_message = 'Dữ liệu master item chưa hợp lệ.'
+        elif action_type == 'delete_planning_item':
+            # Delete planning item by item_code
+            code = str(request.POST.get('item_code') or '').strip().upper()
+            if code:
+                deleted, _ = PlanningItem.objects.filter(item_code=code).delete()
+                if deleted:
+                    result_message = f'Đã xóa master item Planning: {code}.'
+                    planning_items = PlanningItem.objects.all().order_by('item_code')
+                else:
+                    error_message = f'Không tìm thấy mã item: {code}.'
+            else:
+                error_message = 'Không có mã item để xóa.'
+        else:
+            selected_root_code = str(request.POST.get('root_item_code') or '').strip().upper()
+
+            for index in range(12):
+                raw_value = (request.POST.get(f'mps_{index + 1}') or '').strip()
+                try:
+                    schedule[index] = float(raw_value) if raw_value else 0.0
+                except (TypeError, ValueError):
+                    schedule[index] = 0.0
+
+            if not selected_root_code:
+                error_message = 'Vui lòng chọn mã sản phẩm gốc Planning.'
+            elif not any(value > 0 for value in schedule):
+                error_message = 'Chưa có dữ liệu MPS lot-size cho root item này. Vui lòng chạy MPS trước rồi quay lại MRP.'
+            else:
+                try:
+                    result = calculate_mrp_plan(selected_root_code, schedule, horizon=12)
+                    mrp_rows = result.get('items', [])
+                    mrp_summary = result.get('summary', {})
+                    schedule_source_label = None
+                except Exception as exc:
+                    error_message = f'Lỗi tính MRP: {exc}'
+
+        if selected_root_code and any(value > 0 for value in schedule):
+            request.session['last_mps_plan'] = {
+                'root_item_code': selected_root_code,
+                'mps': schedule,
+            }
+
+    return render(request, 'inventory/mrp.html', {
+        'title': 'MRP - Material Requirements Planning',
+        'planning_items': planning_items,
+        'bom_code_options': bom_code_options,
+        'root_options': root_options,
+        'selected_root_code': selected_root_code,
+        'schedule': schedule,
+        'schedule_inputs': [
+            {'index': index + 1, 'value': schedule[index]}
+            for index in range(12)
+        ],
+        'schedule_source_label': schedule_source_label,
+        'result': result,
+        'mrp_rows': mrp_rows,
+        'mrp_summary': mrp_summary,
+        'planning_item_form': planning_item_form,
+        'result_message': result_message,
+        'error_message': error_message,
+        'horizon': 12,
+    })
+
+
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def mps(request):
     """Trang MPS (Master Production Schedule)"""
     # Planning dùng mã sản phẩm riêng từ ProductRatio, không dùng Product.id của Operations
@@ -1058,7 +1199,7 @@ def mps(request):
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
 def run_mps_api(request):
-    """API để tính toán MPS dựa trên PPA"""
+    """API ─æß╗â t├¡nh to├ín MPS dß╗▒a tr├¬n PPA"""
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     
@@ -1069,12 +1210,12 @@ def run_mps_api(request):
         data = json.loads(request.body)
         
         product_code = str(data.get('product_code') or '').strip()
-        C = float(data.get('C', 40000000))  # Chi phí thiết lập
-        H = float(data.get('H', 250))  # Chi phí lưu kho
+        C = float(data.get('C', 40000000))  # Chi ph├¡ thiß║┐t lß║¡p
+        H = float(data.get('H', 250))  # Chi ph├¡ l╞░u kho
         begin_inventory = float(data.get('begin_inventory', 0))
         user_orders = data.get('orders') or []
         
-        # Lấy dữ liệu cùng metadata tháng để render đúng timeline
+        # Lß║Ñy dß╗» liß╗çu c├╣ng metadata th├íng ─æß╗â render ─æ├║ng timeline
         month_labels = []
         input_labels = []
 
@@ -1114,23 +1255,23 @@ def run_mps_api(request):
         
         if not demand:
             return JsonResponse({
-                'error': 'Không có dữ liệu nhu cầu cho sản phẩm này'
+                'error': 'Kh├┤ng c├│ dß╗» liß╗çu nhu cß║ºu cho sß║ún phß║⌐m n├áy'
             }, status=400)
         
-        # Tính toán EPP
+        # T├¡nh to├ín EPP
         from inventory.services import calculate_epp, calculate_ppa_analysis
         epp = calculate_epp(C, H)
         
-        # Tính chi tiết PPA analysis và kích cỡ lô (trả về cả các bước chi tiết)
+        # T├¡nh chi tiß║┐t PPA analysis v├á k├¡ch cß╗í l├┤ (trß║ú vß╗ü cß║ú c├íc b╞░ß╗¢c chi tiß║┐t)
         ppa_details, lots, ppa_steps = calculate_ppa_analysis(demand, C, H)
         
-        # Tính MPS
+        # T├¡nh MPS
         projected, atp, net_inventory = calculate_mps(demand, orders, lots, begin_inventory)
         
-        # Chuẩn bị dữ liệu để return theo đúng số kỳ forecast hiện có
+        # Chuß║⌐n bß╗ï dß╗» liß╗çu ─æß╗â return theo ─æ├║ng sß╗æ kß╗│ forecast hiß╗çn c├│
         if not month_labels:
             months = list(range(1, len(demand) + 1))
-            month_labels = [f"Tháng {month}" for month in months]
+            month_labels = [f"Th├íng {month}" for month in months]
         else:
             months = list(range(1, len(demand) + 1))
         
@@ -1138,7 +1279,7 @@ def run_mps_api(request):
         for i, month in enumerate(months):
             result_data.append({
                 'month': month,
-                'month_label': month_labels[i] if i < len(month_labels) else f"Tháng {month}",
+                'month_label': month_labels[i] if i < len(month_labels) else f"Th├íng {month}",
                 'demand': demand[i] if i < len(demand) else 0,
                 'orders': orders[i] if i < len(orders) else 0,
                 'net_inventory': int(net_inventory[i]) if i < len(net_inventory) else 0,
@@ -1148,6 +1289,13 @@ def run_mps_api(request):
                 'atp': int(atp[i]) if i < len(atp) else 0,
             })
         
+        request.session['last_mps_plan'] = {
+            'root_item_code': product_code,
+            'mps': lots,
+            'month_labels': month_labels,
+            'input_labels': input_labels if input_labels else month_labels,
+        }
+
         return JsonResponse({
             'success': True,
             'epp': round(epp, 2),
@@ -1167,16 +1315,8 @@ def run_mps_api(request):
         import traceback
         traceback.print_exc()
         return JsonResponse({
-            'error': f'Lỗi: {str(e)}'
+            'error': f'Lß╗ùi: {str(e)}'
         }, status=500)
-
-
-@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
-def mrp(request):
-    return render(request, 'inventory/placeholder.html', {
-        'title': 'MRP',
-        'message': 'Trang MRP đang được xây dựng.'
-    })
 
 
 def _apply_recommendation_filters(recommendations, urgency='ALL', abc='ALL', action='ALL'):
@@ -1194,7 +1334,7 @@ def _apply_recommendation_filters(recommendations, urgency='ALL', abc='ALL', act
 
 
 def csrf_failure(request, reason=""):
-    message = "Phiên làm việc đã hết hạn hoặc token bảo mật không hợp lệ. Vui lòng tải lại trang và thử lại."
+    message = "Phi├¬n l├ám viß╗çc ─æ├ú hß║┐t hß║ín hoß║╖c token bß║úo mß║¡t kh├┤ng hß╗úp lß╗ç. Vui l├▓ng tß║úi lß║íi trang v├á thß╗¡ lß║íi."
     return render(request, 'inventory/login.html', {
         'error_message': message,
     }, status=403)
@@ -1227,7 +1367,7 @@ def login_view(request):
             request.session['user_role'] = get_user_role_code(user)
             return redirect('dashboard')
 
-        error_message = "Tài khoản hoặc mật khẩu không chính xác."
+        error_message = "T├ái khoß║ún hoß║╖c mß║¡t khß║⌐u kh├┤ng ch├¡nh x├íc."
 
     return render(request, 'inventory/login.html', {
         'error_message': error_message,
@@ -1255,13 +1395,13 @@ def dashboard(request):
             quantity = request.POST.get('quantity')
             date_input = request.POST.get('date')
 
-            # ép kiểu quantity
+            # ├⌐p kiß╗âu quantity
             try:
                 quantity = int(quantity)
             except:
                 quantity = 0
 
-            # ép kiểu date
+            # ├⌐p kiß╗âu date
             try:
                 date_input = datetime.strptime(date_input, "%Y-%m-%d").date()
             except:
@@ -1295,7 +1435,7 @@ def dashboard(request):
             if material_id and quantity > 0 and date_input:
                 material = Material.objects.get(id=material_id)
 
-                # update tồn kho
+                # update tß╗ôn kho
                 if t_type == 'IN':
                     material.on_hand += quantity
                 elif t_type == 'OUT':
@@ -1304,7 +1444,7 @@ def dashboard(request):
 
                 material.save()
 
-                # lưu transaction
+                # l╞░u transaction
                 Transaction.objects.create(
                     material=material,
                     quantity=quantity,
@@ -1318,7 +1458,7 @@ def dashboard(request):
     products = Product.objects.all()
     materials = Material.objects.all()
 
-    # 👉 lấy mới nhất + ổn định thứ tự
+    # ≡ƒæë lß║Ñy mß╗¢i nhß║Ñt + ß╗òn ─æß╗ïnh thß╗⌐ tß╗▒
     sales_qs = SalesData.objects.filter(source=SalesData.SOURCE_OPERATIONS)
     sales_list = sales_qs.order_by('-date', '-id')[:10]
     transaction_list = Transaction.objects.filter(source=Transaction.SOURCE_OPERATIONS).order_by('-id')[:10]
@@ -1388,7 +1528,7 @@ def dashboard(request):
         'total_revenue': round(float(total_revenue), 2),
     }
 
-    # 👉 Gợi ý ngày nhập gần nhất
+    # ≡ƒæë Gß╗úi ├╜ ng├áy nhß║¡p gß║ºn nhß║Ñt
     last_sale = sales_qs.order_by('-date').first()
 
     if last_sale:
@@ -1719,24 +1859,24 @@ def forecast(request):
                 evaluation_class = "evaluation-good"
                 evaluation_icon = "fas fa-check"
                 evaluation_message = (
-                    "Mô hình có độ chính xác rất cao (MAPE < 10%). "
-                    "Kết quả dự báo rất đáng tin cậy."
+                    "M├┤ h├¼nh c├│ ─æß╗Ö ch├¡nh x├íc rß║Ñt cao (MAPE < 10%). "
+                    "Kß║┐t quß║ú dß╗▒ b├ío rß║Ñt ─æ├íng tin cß║¡y."
                 )
             elif mape_value < 20:
                 mape_level = "medium"
                 evaluation_class = "evaluation-medium"
                 evaluation_icon = "fas fa-info"
                 evaluation_message = (
-                    "Mô hình ở mức chấp nhận được (10% - 20%). "
-                    "Cần theo dõi thêm biến động thực tế."
+                    "M├┤ h├¼nh ß╗ƒ mß╗⌐c chß║Ñp nhß║¡n ─æ╞░ß╗úc (10% - 20%). "
+                    "Cß║ºn theo d├╡i th├¬m biß║┐n ─æß╗Öng thß╗▒c tß║┐."
                 )
             else:
                 mape_level = "bad"
                 evaluation_class = "evaluation-bad"
                 evaluation_icon = "fas fa-exclamation-triangle"
                 evaluation_message = (
-                    "Độ sai số cao (MAPE > 20%). Nhu cầu sản phẩm này có biến động "
-                    "quá lớn, mô hình hiện tại không phù hợp."
+                    "─Éß╗Ö sai sß╗æ cao (MAPE > 20%). Nhu cß║ºu sß║ún phß║⌐m n├áy c├│ biß║┐n ─æß╗Öng "
+                    "qu├í lß╗¢n, m├┤ h├¼nh hiß╗çn tß║íi kh├┤ng ph├╣ hß╗úp."
                 )
 
             product_result = {
@@ -1754,7 +1894,7 @@ def forecast(request):
             }
 
     # =========================
-    # 🔥 MATERIAL AGGREGATE (LUÔN CHẠY)
+    # ≡ƒöÑ MATERIAL AGGREGATE (LU├öN CHß║áY)
     # =========================
     material_dict = defaultdict(lambda: {
         "material": "",
@@ -1764,10 +1904,10 @@ def forecast(request):
         "forecast_7": [0] * 7
     })
 
-    # ✅ FIX: Fetch all BOMs with material eagerly (NOT nested loop)
+    # Γ£à FIX: Fetch all BOMs with material eagerly (NOT nested loop)
     all_boms = BOM.objects.select_related('material', 'product')
     
-    # 🔥 FIX: Use safe defaults - SKIP expensive forecasting on page load.
+    # ≡ƒöÑ FIX: Use safe defaults - SKIP expensive forecasting on page load.
     # When user requests analysis, build forecasts only for the selected
     # product and other products that share BOM materials with it.
     product_forecasts = {}
@@ -1887,7 +2027,7 @@ def forecast(request):
             })
 
     # =========================
-    # 🔥 LUÔN RETURN
+    # ≡ƒöÑ LU├öN RETURN
     # =========================
     return render(request, 'inventory/forecast.html', {
         "products": products,
@@ -1966,13 +2106,13 @@ def forecast_monthly(request):
                         })
                         rows_imported += 1
 
-                result_message = f'Đã import {rows_imported} dòng dữ liệu sản xuất quá khứ thành công.'
+                result_message = f'─É├ú import {rows_imported} d├▓ng dß╗» liß╗çu sß║ún xuß║Ñt qu├í khß╗⌐ th├ánh c├┤ng.'
                 if rows_skipped:
-                    result_message += f' Bỏ qua {rows_skipped} dòng không hợp lệ.'
+                    result_message += f' Bß╗Å qua {rows_skipped} d├▓ng kh├┤ng hß╗úp lß╗ç.'
             except Exception as e:
-                error_message = f'Lỗi xử lý file: {str(e)}'
+                error_message = f'Lß╗ùi xß╗¡ l├╜ file: {str(e)}'
         else:
-            error_message = 'Vui lòng chọn file Excel hợp lệ.'
+            error_message = 'Vui l├▓ng chß╗ìn file Excel hß╗úp lß╗ç.'
 
     history_qs = MonthlyProductionData.objects.filter(source=MonthlyProductionData.SOURCE_PLANNING).order_by('month')
     history_rows = [
@@ -2031,11 +2171,11 @@ def abc_page(request):
     results = []
 
     # =========================
-    # 🔵 1. ABC TOÀN HỆ THỐNG (THEO TRANSACTION - TỐI ƯU)
+    # ≡ƒö╡ 1. ABC TO├ÇN Hß╗å THß╗ÉNG (THEO TRANSACTION - Tß╗ÉI ╞»U)
     # =========================
     material_list = []
 
-    # 👉 gom transaction 1 lần (KHÔNG loop)
+    # ≡ƒæë gom transaction 1 lß║ºn (KH├öNG loop)
     try:
         transaction_data = (
             Transaction.objects
@@ -2043,7 +2183,7 @@ def abc_page(request):
             .values('material')
             .annotate(total=Sum('quantity'))
         )
-        # 👉 convert thành dict cho nhanh
+        # ≡ƒæë convert th├ánh dict cho nhanh
         demand_map = {
             item['material']: item['total']
             for item in transaction_data
@@ -2060,13 +2200,13 @@ def abc_page(request):
 
         material_list.append({
             "material": m,
-            "demand": demand  # 🔥 giữ tên mean cho abc_classification
+            "demand": demand  # ≡ƒöÑ giß╗» t├¬n mean cho abc_classification
         })
 
-    # 👉 ABC
+    # ≡ƒæë ABC
     abc_all = abc_classification(material_list)
 
-    # 👉 đếm tổng
+    # ≡ƒæë ─æß║┐m tß╗òng
     abc_total = {"A": 0, "B": 0, "C": 0}
 
     for item in material_list:
@@ -2077,7 +2217,7 @@ def abc_page(request):
             abc_total[cat] += 1
 
     # =========================
-    # 🔴 FILTER MATERIAL
+    # ≡ƒö┤ FILTER MATERIAL
     # =========================
     filtered_materials = []
 
@@ -2097,7 +2237,7 @@ def abc_page(request):
             })
 
     # =========================
-    # 🟢 ABC THEO PRODUCT
+    # ≡ƒƒó ABC THEO PRODUCT
     # =========================
     if product_id:
         selected_product = Product.objects.get(id=product_id)
@@ -2158,15 +2298,15 @@ def inventory_analysis(request):
         # Determine status based on on_hand level
         if material.on_hand <= 0:
             status = 'out_of_stock'
-            status_label = 'Hết hàng'
+            status_label = 'Hß║┐t h├áng'
             status_color = 'danger'
         elif material.on_hand < material.leadtime * 10:  # Simple threshold
             status = 'low_stock'
-            status_label = 'Tồn kho thấp'
+            status_label = 'Tß╗ôn kho thß║Ñp'
             status_color = 'warning'
         else:
             status = 'normal'
-            status_label = 'Bình thường'
+            status_label = 'B├¼nh th╞░ß╗¥ng'
             status_color = 'success'
         
         analysis_data.append({
@@ -2234,10 +2374,10 @@ def access_control(request):
             try:
                 target_user = User.objects.get(id=role_update_user_id)
             except User.DoesNotExist:
-                error_message = 'Tài khoản cần cập nhật không tồn tại.'
+                error_message = 'T├ái khoß║ún cß║ºn cß║¡p nhß║¡t kh├┤ng tß╗ôn tß║íi.'
             else:
                 if target_user.id == request.user.id:
-                    error_message = 'Bạn không thể tự thay đổi vai trò của tài khoản đang đăng nhập.'
+                    error_message = 'Bß║ín kh├┤ng thß╗â tß╗▒ thay ─æß╗òi vai tr├▓ cß╗ºa t├ái khoß║ún ─æang ─æ─âng nhß║¡p.'
                 else:
                     selected_role = request.POST.get('role_code', ROLE_OTHER)
                     if selected_role == ROLE_ADMIN:
@@ -2250,37 +2390,37 @@ def access_control(request):
                             target_user.is_superuser = False
                             target_user.save(update_fields=['is_superuser'])
                         assign_user_role(target_user, selected_role)
-                    success_message = f'Đã cập nhật vai trò cho {target_user.username}.'
+                    success_message = f'─É├ú cß║¡p nhß║¡t vai tr├▓ cho {target_user.username}.'
 
         elif delete_user_id:
             if not request.user.is_superuser:
-                error_message = 'Chỉ admin mới có quyền xóa tài khoản.'
+                error_message = 'Chß╗ë admin mß╗¢i c├│ quyß╗ün x├│a t├ái khoß║ún.'
             else:
                 try:
                     target_user = User.objects.get(id=delete_user_id)
                 except User.DoesNotExist:
-                    error_message = 'Tài khoản cần xóa không tồn tại.'
+                    error_message = 'T├ái khoß║ún cß║ºn x├│a kh├┤ng tß╗ôn tß║íi.'
                 else:
                     if target_user.id == request.user.id:
-                        error_message = 'Bạn không thể tự xóa tài khoản đang đăng nhập.'
+                        error_message = 'Bß║ín kh├┤ng thß╗â tß╗▒ x├│a t├ái khoß║ún ─æang ─æ─âng nhß║¡p.'
                     elif target_user.is_superuser and User.objects.filter(is_superuser=True).count() <= 1:
-                        error_message = 'Không thể xóa admin cuối cùng của hệ thống.'
+                        error_message = 'Kh├┤ng thß╗â x├│a admin cuß╗æi c├╣ng cß╗ºa hß╗ç thß╗æng.'
                     else:
                         deleted_username = target_user.username
                         target_user.delete()
-                        success_message = f'Đã xóa tài khoản {deleted_username}.'
+                        success_message = f'─É├ú x├│a t├ái khoß║ún {deleted_username}.'
         else:
             username = request.POST.get('username', '').strip()
             password = request.POST.get('password', '')
             role_code = request.POST.get('role_code', ROLE_OTHER)
 
             if not username or not password:
-                error_message = 'Vui lòng nhập đầy đủ tài khoản và mật khẩu.'
+                error_message = 'Vui l├▓ng nhß║¡p ─æß║ºy ─æß╗º t├ái khoß║ún v├á mß║¡t khß║⌐u.'
             elif User.objects.filter(username=username).exists():
-                error_message = 'Tài khoản đã tồn tại, vui lòng chọn tên khác.'
+                error_message = 'T├ái khoß║ún ─æ├ú tß╗ôn tß║íi, vui l├▓ng chß╗ìn t├¬n kh├íc.'
             else:
                 create_user_with_role(username=username, password=password, role_code=role_code)
-                success_message = f'Đã tạo tài khoản {username} thành công.'
+                success_message = f'─É├ú tß║ío t├ái khoß║ún {username} th├ánh c├┤ng.'
 
     users = []
     for user in User.objects.all().order_by('username'):
@@ -2333,11 +2473,11 @@ def import_data(request, sales_source=SalesData.SOURCE_OPERATIONS):
         sales_source = SalesData.SOURCE_OPERATIONS
 
     source_label = 'OPERATIONS' if sales_source == SalesData.SOURCE_OPERATIONS else 'PLANNING'
-    page_title = 'Import dữ liệu' if sales_source == SalesData.SOURCE_OPERATIONS else 'Import dữ liệu kế hoạch'
+    page_title = 'Import dß╗» liß╗çu' if sales_source == SalesData.SOURCE_OPERATIONS else 'Import dß╗» liß╗çu kß║┐ hoß║ích'
     page_subtitle = (
-        'Nhập dữ liệu bán hàng hoặc giao dịch cho OPERATIONS'
+        'Nhß║¡p dß╗» liß╗çu b├ín h├áng hoß║╖c giao dß╗ïch cho OPERATIONS'
         if sales_source == SalesData.SOURCE_OPERATIONS
-        else 'Nhập dữ liệu bán hàng cho PLANNING'
+        else 'Nhß║¡p dß╗» liß╗çu b├ín h├áng cho PLANNING'
     )
 
     form = ImportDataForm()
@@ -2375,7 +2515,7 @@ def import_data(request, sales_source=SalesData.SOURCE_OPERATIONS):
                 ).exists()
 
                 if is_duplicate:
-                    result_message = 'Bỏ qua: bản ghi doanh số trùng hoàn toàn đã tồn tại.'
+                    result_message = 'Bß╗Å qua: bß║ún ghi doanh sß╗æ tr├╣ng ho├án to├án ─æ├ú tß╗ôn tß║íi.'
                 else:
                     SalesData.objects.create(
                         product_id=product_id,
@@ -2383,9 +2523,9 @@ def import_data(request, sales_source=SalesData.SOURCE_OPERATIONS):
                         date=date_input,
                         source=sales_source,
                     )
-                    result_message = f'Đã thêm doanh số thành công cho {source_label}.'
+                    result_message = f'─É├ú th├¬m doanh sß╗æ th├ánh c├┤ng cho {source_label}.'
             else:
-                error_message = 'Dữ liệu nhập doanh số không hợp lệ.'
+                error_message = 'Dß╗» liß╗çu nhß║¡p doanh sß╗æ kh├┤ng hß╗úp lß╗ç.'
 
         elif 'add_transaction' in request.POST:
             material_id = request.POST.get('material_id')
@@ -2414,7 +2554,7 @@ def import_data(request, sales_source=SalesData.SOURCE_OPERATIONS):
                 ).exists()
 
                 if is_duplicate:
-                    result_message = 'Bỏ qua: giao dịch trùng hoàn toàn đã tồn tại.'
+                    result_message = 'Bß╗Å qua: giao dß╗ïch tr├╣ng ho├án to├án ─æ├ú tß╗ôn tß║íi.'
                 else:
                     if t_type == 'IN':
                         material.on_hand += quantity
@@ -2429,9 +2569,9 @@ def import_data(request, sales_source=SalesData.SOURCE_OPERATIONS):
                         transaction_type=t_type,
                         date=date_input
                     )
-                    result_message = 'Đã thêm giao dịch thành công.'
+                    result_message = '─É├ú th├¬m giao dß╗ïch th├ánh c├┤ng.'
             else:
-                error_message = 'Dữ liệu nhập giao dịch không hợp lệ.'
+                error_message = 'Dß╗» liß╗çu nhß║¡p giao dß╗ïch kh├┤ng hß╗úp lß╗ç.'
 
         elif 'import_excel' in request.POST:
             form = ImportDataForm(request.POST, request.FILES)
@@ -2483,13 +2623,13 @@ def import_data(request, sales_source=SalesData.SOURCE_OPERATIONS):
                                 continue
 
                         result_message = (
-                            f'✓ Đã import {rows_imported} bản ghi bán hàng ({source_label}) thành công. '
-                            f'Bỏ qua {rows_skipped_duplicate} bản ghi trùng hoàn toàn.'
+                            f'Γ£ô ─É├ú import {rows_imported} bß║ún ghi b├ín h├áng ({source_label}) th├ánh c├┤ng. '
+                            f'Bß╗Å qua {rows_skipped_duplicate} bß║ún ghi tr├╣ng ho├án to├án.'
                         )
 
                     elif import_type == 'transaction':
                         if sales_source != SalesData.SOURCE_OPERATIONS:
-                            error_message = 'Nguồn PLANNING không dùng dữ liệu giao dịch kho.'
+                            error_message = 'Nguß╗ôn PLANNING kh├┤ng d├╣ng dß╗» liß╗çu giao dß╗ïch kho.'
                             return render(request, 'inventory/import_data.html', {
                                 'form': form,
                                 'result_message': result_message,
@@ -2543,14 +2683,14 @@ def import_data(request, sales_source=SalesData.SOURCE_OPERATIONS):
                                 continue
 
                         result_message = (
-                            f'✓ Đã import {rows_imported} bản ghi giao dịch thành công. '
-                            f'Bỏ qua {rows_skipped_duplicate} bản ghi trùng hoàn toàn.'
+                            f'Γ£ô ─É├ú import {rows_imported} bß║ún ghi giao dß╗ïch th├ánh c├┤ng. '
+                            f'Bß╗Å qua {rows_skipped_duplicate} bß║ún ghi tr├╣ng ho├án to├án.'
                         )
 
                 except Exception as e:
-                    error_message = f'Lỗi xử lý file: {str(e)}'
+                    error_message = f'Lß╗ùi xß╗¡ l├╜ file: {str(e)}'
             else:
-                error_message = 'Vui lòng chọn loại dữ liệu và file Excel hợp lệ.'
+                error_message = 'Vui l├▓ng chß╗ìn loß║íi dß╗» liß╗çu v├á file Excel hß╗úp lß╗ç.'
 
     return render(request, 'inventory/import_data.html', {
         'form': form,
@@ -2605,13 +2745,13 @@ def multilevel_bom_import(request):
                         edge.level = cd['level']
                         edge.remark = cd['remark']
                         edge.save()
-                        result_message = 'Đã cập nhật cạnh BOM tồn tại.'
+                        result_message = '─É├ú cß║¡p nhß║¡t cß║ính BOM tß╗ôn tß║íi.'
                     else:
-                        result_message = 'Đã thêm cạnh BOM mới.'
+                        result_message = '─É├ú th├¬m cß║ính BOM mß╗¢i.'
                 except Exception as e:
                     error_message = str(e)
             else:
-                error_message = 'Dữ liệu nhập không hợp lệ.'
+                error_message = 'Dß╗» liß╗çu nhß║¡p kh├┤ng hß╗úp lß╗ç.'
 
         # Update or delete row via row form
         elif request.POST.get('action_type') == 'update_bom_edge':
@@ -2632,7 +2772,7 @@ def multilevel_bom_import(request):
                     pass
                 edge.remark = request.POST.get('remark') or edge.remark
                 edge.save()
-                result_message = 'Đã lưu thay đổi.'
+                result_message = '─É├ú l╞░u thay ─æß╗òi.'
             except Exception as e:
                 error_message = str(e)
 
@@ -2640,7 +2780,7 @@ def multilevel_bom_import(request):
             edge_id = request.POST.get('edge_id')
             try:
                 MultiLevelBOMEdge.objects.filter(id=edge_id).delete()
-                result_message = 'Đã xóa cạnh BOM.'
+                result_message = '─É├ú x├│a cß║ính BOM.'
             except Exception as e:
                 error_message = str(e)
 
@@ -2684,9 +2824,9 @@ import json
 
 @session_name_required
 def api_mongodb_materials(request):
-    """API để quản lý materials trong MongoDB"""
+    """API ─æß╗â quß║ún l├╜ materials trong MongoDB"""
     if request.method == 'GET':
-        # Lấy tất cả materials
+        # Lß║Ñy tß║Ñt cß║ú materials
         materials = get_all_materials()
         materials_list = []
         for mat in materials:
@@ -2695,7 +2835,7 @@ def api_mongodb_materials(request):
         return JsonResponse({'status': 'success', 'data': materials_list})
     
     elif request.method == 'POST':
-        # Thêm material mới
+        # Th├¬m material mß╗¢i
         try:
             data = json.loads(request.body)
             material_id = insert_material(
@@ -2713,9 +2853,9 @@ def api_mongodb_materials(request):
 
 @session_name_required
 def api_mongodb_material_detail(request, material_id):
-    """API để xem/update/delete material cụ thể"""
+    """API ─æß╗â xem/update/delete material cß╗Ñ thß╗â"""
     if request.method == 'GET':
-        # Lấy material by ID
+        # Lß║Ñy material by ID
         material = get_material_by_id(material_id)
         if material:
             material['_id'] = str(material['_id'])
@@ -2742,7 +2882,7 @@ def api_mongodb_material_detail(request, material_id):
 
 @session_name_required
 def api_mongodb_products(request):
-    """API để quản lý products trong MongoDB"""
+    """API ─æß╗â quß║ún l├╜ products trong MongoDB"""
     if request.method == 'GET':
         products = get_all_products()
         products_list = []
@@ -2765,7 +2905,7 @@ def api_mongodb_products(request):
 
 @session_name_required
 def api_mongodb_product_detail(request, product_id):
-    """API để xem/update/delete product cụ thể"""
+    """API ─æß╗â xem/update/delete product cß╗Ñ thß╗â"""
     if request.method == 'GET':
         product = get_product_by_id(product_id)
         if product:
@@ -2791,7 +2931,7 @@ def api_mongodb_product_detail(request, product_id):
 
 @session_name_required
 def api_mongodb_transactions(request):
-    """API để quản lý transactions trong MongoDB"""
+    """API ─æß╗â quß║ún l├╜ transactions trong MongoDB"""
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
@@ -2808,7 +2948,7 @@ def api_mongodb_transactions(request):
 
 @session_name_required
 def api_mongodb_material_transactions(request, material_id):
-    """API để lấy tất cả transactions của một material"""
+    """API ─æß╗â lß║Ñy tß║Ñt cß║ú transactions cß╗ºa mß╗Öt material"""
     if request.method == 'GET':
         transactions = get_transactions_by_material(material_id)
         transactions_list = []
@@ -2835,7 +2975,7 @@ def api_mongodb_test(request):
                     ordering_cost=50,
                     price_cost=25.0
                 )
-                return JsonResponse({'status': 'success', 'message': f'✅ Inserted sample material: {mat_id}'})
+                return JsonResponse({'status': 'success', 'message': f'Γ£à Inserted sample material: {mat_id}'})
             
             elif action == 'get_all':
                 # Get all materials
@@ -2848,7 +2988,7 @@ def api_mongodb_test(request):
                 if materials:
                     first_mat = materials[0]
                     modified = update_material(str(first_mat['_id']), on_hand=200, price_cost=30.0)
-                    return JsonResponse({'status': 'success', 'message': f'✅ Updated {modified} materials'})
+                    return JsonResponse({'status': 'success', 'message': f'Γ£à Updated {modified} materials'})
                 return JsonResponse({'status': 'error', 'message': 'No materials found'})
             
             elif action == 'delete_sample':
@@ -2857,7 +2997,7 @@ def api_mongodb_test(request):
                 if materials:
                     last_mat = materials[-1]
                     deleted = delete_material(str(last_mat['_id']))
-                    return JsonResponse({'status': 'success', 'message': f'✅ Deleted {deleted} materials'})
+                    return JsonResponse({'status': 'success', 'message': f'Γ£à Deleted {deleted} materials'})
                 return JsonResponse({'status': 'error', 'message': 'No materials found'})
             
             return JsonResponse({'status': 'error', 'message': 'Invalid action'})
