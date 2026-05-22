@@ -1,0 +1,755 @@
+{% extends 'inventory/base.html' %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="mrp-page">
+  <section class="mrp-hero">
+    <div>
+
+    <script>
+    (function () {
+      const BRIDGE_KEY = 'inventory.mps.toMrpBridge';
+
+      function parseBridge() {
+        try {
+          const raw = localStorage.getItem(BRIDGE_KEY);
+          if (!raw) return null;
+          const data = JSON.parse(raw);
+          if (!data || typeof data !== 'object') return null;
+          return data;
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function applyBridge() {
+        const bridge = parseBridge();
+        if (!bridge) return;
+
+        const rootSelect = document.getElementById('root_item_code');
+        if (rootSelect && bridge.root_item_code) {
+          rootSelect.value = bridge.root_item_code;
+        }
+
+        if (Array.isArray(bridge.mps)) {
+          bridge.mps.slice(0, 12).forEach((value, index) => {
+            const input = document.getElementById('mps_' + (index + 1));
+            if (input && value != null) {
+              input.value = value;
+            }
+          });
+        }
+      }
+
+      function clearBridge() {
+        try {
+          localStorage.removeItem(BRIDGE_KEY);
+        } catch (error) {
+          /* ignore */
+        }
+      }
+
+        window.addEventListener('DOMContentLoaded', () => {
+          applyBridge();
+          clearBridge();
+        });
+    })();
+    </script>
+      <h1>{{ title }}</h1>
+      <p>
+        Trang MRP dùng dữ liệu Planning riêng: master item, lead time, tồn kho đầu kỳ,
+        scheduled receipts và BOM đa cấp để nổ nhu cầu từ MPS xuống các cấp con.
+      </p>
+    </div>
+    
+  </section>
+
+  <section class="mrp-grid">
+    <div class="panel-card mrp-master-form-card">
+      <div class="card-heading compact-heading">
+        <h2>Cập nhật master item Planning</h2>
+        <p>Nhập lead time, tồn kho đầu kỳ, lot policy và scheduled receipts. Ô item code gợi ý mã từ BOM đa cấp.</p>
+      </div>
+      <form method="post" class="planning-item-form">
+        {% csrf_token %}
+        <input type="hidden" name="action_type" value="save_planning_item" />
+        <datalist id="bom_code_options">
+          {% for code in bom_code_options %}
+            <option value="{{ code }}"></option>
+          {% endfor %}
+        </datalist>
+        <div class="planning-form-grid">
+          <div class="field-cell">{{ planning_item_form.item_code.label_tag }}{{ planning_item_form.item_code }}</div>
+          <div class="field-cell">{{ planning_item_form.item_name.label_tag }}{{ planning_item_form.item_name }}</div>
+          <div class="field-cell">{{ planning_item_form.item_type.label_tag }}{{ planning_item_form.item_type }}</div>
+          <div class="field-cell">{{ planning_item_form.lead_time.label_tag }}{{ planning_item_form.lead_time }}</div>
+          <div class="field-cell">{{ planning_item_form.on_hand.label_tag }}{{ planning_item_form.on_hand }}</div>
+          <div class="field-cell">{{ planning_item_form.lot_policy.label_tag }}{{ planning_item_form.lot_policy }}</div>
+          <div class="field-cell">{{ planning_item_form.lot_size.label_tag }}{{ planning_item_form.lot_size }}</div>
+          <div class="field-cell">{{ planning_item_form.safety_stock.label_tag }}{{ planning_item_form.safety_stock }}</div>
+          <div class="field-cell field-wide">{{ planning_item_form.scheduled_receipts.label_tag }}{{ planning_item_form.scheduled_receipts }}</div>
+          <div class="field-cell field-wide">
+            <label>Cách nhập Scheduled receipts</label>
+            <div class="receipt-help-box">
+              <p>Nhập JSON theo từng kỳ nhận hàng. Mỗi phần tử tương ứng một kỳ trong horizon.</p>
+              <code>[0, 50, 0, 100, 0, 0, 25, 0, 0, 0, 0, 0]</code>
+              <p>Ví dụ trên nghĩa là kỳ 2 nhận 50, kỳ 4 nhận 100, kỳ 7 nhận 25.</p>
+            </div>
+          </div>
+        </div>
+        {% if planning_item_form.errors %}
+        <div class="alert-box alert-error">Vui lòng kiểm tra lại dữ liệu master item Planning.</div>
+        {% endif %}
+        <div class="form-actions form-actions-left">
+          <button type="submit" class="btn-secondary">Lưu Planning item</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="mrp-right-stack">
+      <div class="panel-card mrp-run-card">
+        <div class="card-heading">
+          <h2>Chạy MRP</h2>
+          <p>MRP lấy lot-size từ kết quả MPS đã chạy trước đó, sau đó nổ BOM và tính cho các item con.</p>
+        </div>
+
+        {% if result_message %}
+        <div class="alert-box alert-success">{{ result_message }}</div>
+        {% endif %}
+        {% if schedule_source_label %}
+        <div class="alert-box alert-info">{{ schedule_source_label }}</div>
+        {% endif %}
+
+        {% if error_message %}
+        <div class="alert-box alert-error">{{ error_message }}</div>
+        {% endif %}
+
+        <form method="post" class="mrp-form">
+          {% csrf_token %}
+          <div class="input-grid">
+            <div class="input-cell">
+              <label for="root_item_code">Root item Planning</label>
+              <select id="root_item_code" name="root_item_code" required>
+                <option value="">-- Chọn mã sản phẩm gốc --</option>
+                {% for item in root_options %}
+                <option value="{{ item.item_code }}" {% if selected_root_code == item.item_code %}selected{% endif %}>
+                  {{ item.item_code }} - {{ item.item_name|default:item.item_code }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="input-cell">
+              <label>Horizon</label>
+              <input type="text" value="12 kỳ" disabled>
+            </div>
+          </div>
+
+          <div class="help-inline">
+            MPS input đã được ẩn. Hệ thống tự dùng 12 kỳ lot-size từ MPS gần nhất của root item để tính MRP.
+          </div>
+
+          {% for schedule_item in schedule_inputs %}
+          <input
+            id="mps_{{ schedule_item.index }}"
+            name="mps_{{ schedule_item.index }}"
+            type="hidden"
+            value="{{ schedule_item.value }}"
+          />
+          {% endfor %}
+
+          <div class="form-actions">
+            <button type="submit" class="btn-primary">Tính MRP</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel-card mrp-master-table-card">
+        <div class="card-heading">
+          <h2>Danh sách master item Planning</h2>
+          <p>Bảng dữ liệu đã lưu để MRP sử dụng khi tính toán.</p>
+        </div>
+        {% if planning_items %}
+        <div class="table-wrap master-table-wrap">
+          <table class="modern-table">
+            <thead>
+              <tr>
+                <th>Mã item</th>
+                <th>Tên item</th>
+                <th>Loại</th>
+                <th>Lead time</th>
+                <th>Tồn đầu</th>
+                <th>Scheduled receipts</th>
+                <th>Lot policy</th>
+                <th>Lot size</th>
+                <th>Safety stock</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in planning_items %}
+              <tr>
+                <td>{{ item.item_code }}</td>
+                <td>{{ item.item_name|default:'-' }}</td>
+                <td>{{ item.get_item_type_display }}</td>
+                <td>{{ item.lead_time }}</td>
+                <td>{{ item.on_hand }}</td>
+                <td>
+                  {% if item.scheduled_receipts %}
+                    {{ item.scheduled_receipts|safe }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td>{{ item.get_lot_policy_display }}</td>
+                <td>{{ item.lot_size }}</td>
+                <td>{{ item.safety_stock }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="empty-note">Chưa có master item Planning được lưu. Bạn vẫn có thể chạy MRP từ mã sản phẩm lấy sang từ MPS; các trường Planning sẽ dùng giá trị mặc định nếu chưa khai báo.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {% if mrp_summary %}
+  <section class="summary-strip">
+    <div class="summary-card">
+      <span>Root item</span>
+      <strong>{{ mrp_summary.root_item_code }}</strong>
+    </div>
+    <div class="summary-card">
+      <span>Horizon</span>
+      <strong>{{ mrp_summary.horizon }} kỳ</strong>
+    </div>
+    <div class="summary-card">
+      <span>Số item MRP</span>
+      <strong>{{ mrp_summary.item_count }}</strong>
+    </div>
+    <div class="summary-card">
+      <span>Master item thiếu</span>
+      <strong>{{ mrp_summary.missing_master_items|length }}</strong>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if mrp_summary.warnings %}
+  <section class="panel-card warning-card">
+    <div class="card-heading">
+      <h2>Cảnh báo</h2>
+    </div>
+    <ul class="warning-list">
+      {% for warning in mrp_summary.warnings %}
+      <li>{{ warning }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if mrp_rows %}
+  <section class="results-stack">
+    {% for row in mrp_rows %}
+    <div class="panel-card mrp-item-card">
+      <div class="card-heading">
+        <h2>{{ row.item_code }} - {{ row.item_name }}</h2>
+        <p>
+          Type: {{ row.item_type }} | Lead time: {{ row.lead_time }} | Policy: {{ row.lot_policy }}
+          | On hand: {{ row.on_hand }}
+        </p>
+      </div>
+
+      <div class="table-wrap mrp-matrix-wrap">
+        <table class="modern-table mrp-matrix">
+          <thead>
+            <tr>
+              <th>Chỉ tiêu</th>
+              <th>Past due</th>
+              {% for idx in row.gross_requirements %}
+              <th>Kì {{ forloop.counter }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th>Gross requirements</th>
+              <td>0</td>
+              {% for value in row.gross_requirements %}
+              <td>{{ value|floatformat:'0' }}</td>
+              {% endfor %}
+            </tr>
+            <tr>
+              <th>Scheduled receipts</th>
+              <td>0</td>
+              {% for value in row.scheduled_receipts %}
+              <td>{{ value|floatformat:'0' }}</td>
+              {% endfor %}
+            </tr>
+            <tr>
+              <th>Projected available</th>
+              <td>0</td>
+              {% for value in row.projected_available %}
+              <td>{{ value|floatformat:'0' }}</td>
+              {% endfor %}
+            </tr>
+            <tr>
+              <th>Net requirements</th>
+              <td class="accent-cell">0</td>
+              {% for value in row.net_requirements %}
+              <td class="accent-cell">{{ value|floatformat:'0' }}</td>
+              {% endfor %}
+            </tr>
+            <tr>
+              <th>Planned order receipts</th>
+              <td class="accent-cell strong">0</td>
+              {% for value in row.planned_order_receipts %}
+              <td class="accent-cell strong">{{ value|floatformat:'0' }}</td>
+              {% endfor %}
+            </tr>
+            <tr>
+              <th>Planned order releases</th>
+              <td class="accent-cell strong">{{ row.past_due_release|default:0|floatformat:'0' }}</td>
+              {% for value in row.planned_order_releases %}
+              <td class="accent-cell strong">{{ value|floatformat:'0' }}</td>
+              {% endfor %}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+</div>
+
+<style>
+  .mrp-page {
+    display: grid;
+    gap: 18px;
+  }
+
+  .mrp-hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    align-items: flex-start;
+    padding: 22px 24px;
+    border-radius: 22px;
+    color: #f7fbff;
+    background: linear-gradient(135deg, #16384b 0%, #244d62 48%, #4a7f93 100%);
+    box-shadow: 0 18px 40px rgba(25, 47, 61, 0.18);
+  }
+
+  .eyebrow {
+    margin: 0 0 6px;
+    letter-spacing: 0.16em;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    opacity: 0.84;
+  }
+
+  .mrp-hero h1 {
+    margin: 0 0 10px;
+    font-size: 30px;
+    line-height: 1.1;
+  }
+
+  .mrp-hero p {
+    margin: 0;
+    max-width: 980px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  .hero-chip {
+    align-self: center;
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .mrp-grid {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 18px;
+    align-items: start;
+  }
+
+  .mrp-left-column {
+    grid-column: 1;
+  }
+
+  .mrp-left-column .panel-card {
+    max-width: 360px;
+    justify-self: start;
+  }
+
+  .mrp-right-column {
+    grid-column: 2;
+    display: grid;
+    gap: 18px;
+  }
+
+  /* Ensure right column cards can expand to available width */
+  .mrp-right-stack .panel-card,
+  .mrp-right-stack .panel-card .table-wrap {
+    max-width: none;
+  }
+
+  /* Specific: limit left planning form width */
+  .mrp-master-form-card {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .mrp-master-table-card .master-table-wrap {
+    max-height: 420px;
+    overflow: auto;
+  }
+
+  .panel-card {
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(136, 164, 182, 0.24);
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(31, 52, 66, 0.08);
+    padding: 18px;
+  }
+
+  .inline-form-card {
+    border: 1px solid #dfe8f0;
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 16px;
+    background: #fbfdff;
+  }
+
+  .compact-heading h3 {
+    margin: 0 0 4px;
+    font-size: 15px;
+    color: #223647;
+  }
+
+  .compact-heading p {
+    margin: 0 0 12px;
+    font-size: 12.5px;
+  }
+
+  .planning-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .field-cell {
+    display: grid;
+    gap: 6px;
+  }
+
+  .field-wide {
+    grid-column: 1 / -1;
+  }
+
+  .field-cell label {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #274253;
+  }
+
+  .field-cell input,
+  .field-cell select,
+  .field-cell textarea {
+    width: 100%;
+    border: 1px solid #c8d7e2;
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 14px;
+    background: #fff;
+    resize: none;
+  }
+
+  .card-heading h2 {
+    margin: 0 0 6px;
+    font-size: 18px;
+    color: #223647;
+  }
+
+  .card-heading p {
+    margin: 0 0 14px;
+    color: #5a7180;
+    line-height: 1.5;
+    font-size: 13px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  .modern-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 760px;
+  }
+
+  .modern-table th,
+  .modern-table td {
+    border-bottom: 1px solid #e2ebf2;
+    padding: 9px 10px;
+    text-align: left;
+    vertical-align: top;
+    font-size: 13px;
+  }
+
+  .modern-table thead th {
+    background: #f2f7fb;
+    color: #294152;
+    font-weight: 800;
+  }
+
+  .mrp-form {
+    display: grid;
+    gap: 14px;
+  }
+
+  .input-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .input-cell {
+    display: grid;
+    gap: 6px;
+  }
+
+  .input-cell label,
+  .month-cell label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #274253;
+  }
+
+  .input-cell input,
+  .input-cell select,
+  .month-cell input {
+    width: 100%;
+    border: 1px solid #c8d7e2;
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 14px;
+    background: #fff;
+  }
+
+  .schedule-block {
+    border: 1px solid #dbe6ef;
+    border-radius: 16px;
+    background: #fbfdff;
+    padding: 14px;
+  }
+
+  .schedule-head h3 {
+    margin: 0 0 4px;
+    font-size: 16px;
+    color: #253847;
+  }
+
+  .schedule-head p,
+  .help-text {
+    margin: 0;
+    color: #587181;
+    font-size: 12.8px;
+    line-height: 1.5;
+  }
+
+  .month-grid {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .month-cell {
+    display: grid;
+    gap: 6px;
+  }
+
+    .readonly-input {
+      background: #f5f8fb;
+      color: #344a5a;
+      cursor: not-allowed;
+    }
+
+  .form-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .help-inline {
+    border: 1px dashed #c6d7e4;
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: #f8fcff;
+    color: #4e6778;
+    font-size: 12.8px;
+    line-height: 1.45;
+  }
+
+  .btn-primary {
+    border: none;
+    border-radius: 999px;
+    padding: 11px 18px;
+    background: linear-gradient(135deg, #234e63, #4f8097);
+    color: #fff;
+    font-weight: 800;
+    box-shadow: 0 12px 24px rgba(48, 93, 117, 0.18);
+  }
+
+  .btn-secondary {
+    border: 1px solid #c8d7e2;
+    border-radius: 999px;
+    padding: 10px 16px;
+    background: #ffffff;
+    color: #24485e;
+    font-weight: 800;
+  }
+
+  .form-actions-left {
+    justify-content: flex-start;
+  }
+
+  .alert-box {
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    font-weight: 700;
+  }
+
+  .alert-error {
+    color: #7a2f2f;
+    background: #fdecec;
+    border: 1px solid #f5c3c3;
+  }
+
+  .alert-success {
+    color: #245c2f;
+    background: #e8f7ec;
+    border: 1px solid #bfe0c7;
+  }
+
+  .alert-info {
+    color: #23495e;
+    background: #e8f3f8;
+    border: 1px solid #c8dce8;
+  }
+
+  .summary-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .summary-card {
+    background: #ffffff;
+    border: 1px solid #dbe6ef;
+    border-radius: 16px;
+    padding: 14px;
+    box-shadow: 0 10px 22px rgba(23, 45, 58, 0.06);
+  }
+
+  .summary-card span {
+    display: block;
+    font-size: 12px;
+    color: #6c8595;
+    margin-bottom: 6px;
+  }
+
+  .summary-card strong {
+    font-size: 18px;
+    color: #203646;
+  }
+
+  .warning-card {
+    background: linear-gradient(180deg, #fffdf6, #fff8ea);
+  }
+
+  .warning-list {
+    margin: 0;
+    padding-left: 18px;
+    color: #725c18;
+  }
+
+  .results-stack {
+    display: grid;
+    gap: 16px;
+  }
+
+  .mrp-item-card h2 {
+    font-size: 17px;
+  }
+
+  .mrp-matrix {
+    min-width: 980px;
+  }
+
+  .mrp-matrix th:first-child,
+  .mrp-matrix td:first-child {
+    position: sticky;
+    left: 0;
+    background: #fff;
+    z-index: 1;
+  }
+
+  .mrp-matrix tbody th {
+    min-width: 190px;
+    color: #294152;
+    font-weight: 700;
+    background: #f8fbff;
+  }
+
+  .accent-cell {
+    background: #eef7fb;
+  }
+
+  .strong {
+    font-weight: 800;
+  }
+
+  .empty-note {
+    margin: 0;
+    color: #607887;
+  }
+
+  @media (max-width: 1100px) {
+    .mrp-grid,
+    .summary-strip {
+      grid-template-columns: 1fr;
+    }
+
+    .mrp-run-card,
+    .mrp-right-stack {
+      grid-column: auto;
+    }
+
+    .mrp-run-card {
+      max-width: none;
+      justify-self: stretch;
+    }
+  }
+
+  @media (max-width: 860px) {
+    .mrp-hero {
+      flex-direction: column;
+    }
+
+    .input-grid,
+    .month-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+</style>
+{% endblock %}
