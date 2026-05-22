@@ -99,6 +99,54 @@ class MultiLevelBOMEdge(models.Model):
 
 
 # =========================
+# PLANNING MASTER ITEM
+# =========================
+class PlanningItem(models.Model):
+    ITEM_TYPE_PRODUCT = "PRODUCT"
+    ITEM_TYPE_SEMI = "SEMI"
+    ITEM_TYPE_MATERIAL = "MATERIAL"
+
+    ITEM_TYPE_CHOICES = (
+        (ITEM_TYPE_PRODUCT, "Product"),
+        (ITEM_TYPE_SEMI, "Semi-finished"),
+        (ITEM_TYPE_MATERIAL, "Material"),
+    )
+
+    LOT_POLICY_L4L = "L4L"
+    LOT_POLICY_FOQ = "FOQ"
+    LOT_POLICY_PPA = "PPA"
+
+    LOT_POLICY_CHOICES = (
+        (LOT_POLICY_L4L, "Lot-for-Lot"),
+        (LOT_POLICY_FOQ, "Fixed Order Quantity"),
+        (LOT_POLICY_PPA, "PPA"),
+    )
+
+    item_code = models.CharField(max_length=64, unique=True, db_index=True)
+    item_name = models.CharField(max_length=255, blank=True, default="")
+    item_type = models.CharField(max_length=16, choices=ITEM_TYPE_CHOICES)
+    lead_time = models.IntegerField(default=0)
+    on_hand = models.FloatField(default=0)
+    scheduled_receipts = models.JSONField(default=list, blank=True)
+    lot_policy = models.CharField(
+        max_length=8,
+        choices=LOT_POLICY_CHOICES,
+        default=LOT_POLICY_L4L,
+    )
+    lot_size = models.FloatField(default=0)
+    safety_stock = models.FloatField(default=0)
+    remark = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["item_code"]
+
+    def __str__(self):
+        return f"{self.item_code} - {self.item_name or self.item_type}"
+
+
+# =========================
 # SALES DATA (Demand)
 # =========================
 class SalesData(models.Model):

@@ -1,5 +1,5 @@
 from django import forms
-from .models import Material, Transaction
+from .models import Material, PlanningItem, Transaction
 
 
 class MonthlyForecastImportForm(forms.Form):
@@ -104,3 +104,61 @@ class MultiLevelBOMEntryForm(forms.Form):
         cleaned["child_code"] = child_code.upper()
 
         return cleaned
+
+
+class PlanningItemForm(forms.ModelForm):
+    class Meta:
+        model = PlanningItem
+        fields = [
+            'item_code',
+            'item_name',
+            'item_type',
+            'lead_time',
+            'on_hand',
+            'scheduled_receipts',
+            'lot_policy',
+            'lot_size',
+            'safety_stock',
+            'remark',
+        ]
+        widgets = {
+            'item_code': forms.TextInput(attrs={'class': 'form-control'}),
+            'item_name': forms.TextInput(attrs={'class': 'form-control'}),
+            'item_type': forms.Select(attrs={'class': 'form-control'}),
+            'lead_time': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
+            'on_hand': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'step': '1'}),
+            'scheduled_receipts': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'lot_policy': forms.Select(attrs={'class': 'form-control'}),
+            'lot_size': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'step': '1'}),
+            'safety_stock': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'step': '1'}),
+            'remark': forms.TextInput(attrs={'class': 'form-control'}),
+        }
+
+    def clean_scheduled_receipts(self):
+        value = self.cleaned_data.get('scheduled_receipts')
+        if value in (None, ''):
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            return [value]
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return []
+
+            import json
+
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise forms.ValidationError('scheduled_receipts phải là JSON hợp lệ.') from exc
+
+            if isinstance(parsed, list):
+                return parsed
+            if isinstance(parsed, dict):
+                return [parsed]
+
+            raise forms.ValidationError('scheduled_receipts phải là JSON object hoặc JSON array.')
+
+        return value

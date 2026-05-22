@@ -645,6 +645,7 @@
 <script>
 const MPS_INPUT_STORAGE_KEY = 'inventory.mps.lastInput';
 const MPS_RESULT_STORAGE_KEY = 'inventory.mps.lastResult';
+const MPS_TO_MRP_BRIDGE_KEY = 'inventory.mps.toMrpBridge';
 
 function parseNumberOrDefault(value, defaultValue = 0) {
     const n = Number(value);
@@ -748,6 +749,13 @@ function saveResultState(result) {
     try {
         localStorage.setItem(MPS_RESULT_STORAGE_KEY, JSON.stringify({
             result,
+            saved_at: new Date().toISOString()
+        }));
+
+        localStorage.setItem(MPS_TO_MRP_BRIDGE_KEY, JSON.stringify({
+            root_item_code: document.getElementById('product_code') ? document.getElementById('product_code').value : '',
+            mps: Array.isArray(result.mps) ? result.mps : (Array.isArray(result.data) ? result.data.map(row => row.mps ?? row.lot_size ?? 0) : []),
+            input_labels: Array.isArray(result.input_labels) ? result.input_labels : [],
             saved_at: new Date().toISOString()
         }));
     } catch (error) {
@@ -976,6 +984,7 @@ function displayResults(result) {
     } else {
         setPpaPanelCollapsed();
     }
+
 }
 
 function showError(message) {

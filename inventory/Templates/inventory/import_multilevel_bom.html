@@ -293,7 +293,21 @@
       <div class="bom-cell"><label class="bom-label" for="id_level">Level</label></div>
       <div class="bom-cell"><label class="bom-label" for="id_remark">Remark</label></div>
 
-      <div class="bom-cell">{{ form.root_product_code }}{{ form.root_product_code.errors }}</div>
+      <div class="bom-cell">
+        {% if root_product_options %}
+        <select name="root_product_code" id="id_root_product_code">
+          <option value="">Chọn ID_P</option>
+          {% for option in root_product_options %}
+          <option value="{{ option.product_code }}" {% if form.root_product_code.value == option.product_code %}selected{% endif %}>
+            {{ option.product_code }}
+          </option>
+          {% endfor %}
+        </select>
+        {% else %}
+        {{ form.root_product_code }}
+        {% endif %}
+        {{ form.root_product_code.errors }}
+      </div>
       <div class="bom-cell">{{ form.parent_code }}{{ form.parent_code.errors }}</div>
       <div class="bom-cell">{{ form.parent_type }}{{ form.parent_type.errors }}</div>
       <div class="bom-cell">{{ form.child_code }}{{ form.child_code.errors }}</div>

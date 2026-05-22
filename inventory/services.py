@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import math
 from collections import defaultdict
-from inventory.models import SalesData, BOM, Material, Product, ProductRatio, DisaggregatedPlan, CustomerOrder
+from inventory.models import SalesData, BOM, Material, Product, ProductRatio, DisaggregatedPlan, CustomerOrder, PlanningItem, MultiLevelBOMEdge
 
 
 # =========================
@@ -773,4 +773,253 @@ def calculate_mps(demand, orders, lots, begin_inventory=0):
                 atp[t] = lots[t] - orders[t] - sum_orders
 
     return projected, atp, net_inventory
+
+
+def _normalize_receipts_schedule(receipts, horizon):
+    normalized = [0.0] * horizon
+
+    if not receipts:
+        return normalized
+
+    if isinstance(receipts, (int, float)):
+        if horizon > 0:
+            normalized[0] = float(receipts or 0)
+        return normalized
+
+    if isinstance(receipts, dict):
+        receipts = [receipts]
+
+    if isinstance(receipts, list):
+        if receipts and all(not isinstance(item, dict) for item in receipts):
+            for index, value in enumerate(receipts[:horizon]):
+                try:
+                    normalized[index] = float(value or 0)
+                except (TypeError, ValueError):
+                    normalized[index] = 0.0
+            return normalized
+
+        for entry in receipts:
+            if not isinstance(entry, dict):
+                continue
+
+            period = entry.get('period', entry.get('month', entry.get('index')))
+            quantity = entry.get('qty', entry.get('quantity', entry.get('value', 0)))
+
+            try:
+                period_index = int(period) - 1
+            except (TypeError, ValueError):
+                continue
+
+            if 0 <= period_index < horizon:
+                try:
+                    normalized[period_index] += float(quantity or 0)
+                except (TypeError, ValueError):
+                    continue
+
+    return normalized
+
+
+def _lot_size_for_planning_item(item, required_quantity):
+    required_quantity = float(required_quantity or 0)
+    if required_quantity <= 0:
+        return 0.0
+
+    lot_policy = getattr(item, 'lot_policy', PlanningItem.LOT_POLICY_L4L)
+    lot_size = float(getattr(item, 'lot_size', 0) or 0)
+
+    if lot_policy == PlanningItem.LOT_POLICY_FOQ and lot_size > 0:
+        return float(math.ceil(required_quantity / lot_size) * lot_size)
+
+    if lot_policy == PlanningItem.LOT_POLICY_PPA and lot_size > 0:
+        return float(math.ceil(required_quantity / lot_size) * lot_size)
+
+    return required_quantity
+
+
+def _build_planning_bom_graph(root_item_code):
+    edges = list(
+        MultiLevelBOMEdge.objects.all().order_by('root_product_code', 'level', 'parent_code', 'child_code')
+    )
+
+    adjacency = defaultdict(list)
+    node_set = {root_item_code}
+
+    for edge in edges:
+        if edge.root_product_code != root_item_code and edge.parent_code != root_item_code:
+            continue
+
+        adjacency[edge.parent_code].append(edge)
+        node_set.add(edge.parent_code)
+        node_set.add(edge.child_code)
+
+    reachable = set()
+    stack = [root_item_code]
+    while stack:
+        current = stack.pop()
+        if current in reachable:
+            continue
+        reachable.add(current)
+        for edge in adjacency.get(current, []):
+            stack.append(edge.child_code)
+
+    adjacency = {
+        parent_code: [edge for edge in children if edge.child_code in reachable]
+        for parent_code, children in adjacency.items()
+        if parent_code in reachable
+    }
+
+    indegree = {code: 0 for code in reachable}
+    for parent_code, children in adjacency.items():
+        for edge in children:
+            indegree[edge.child_code] = indegree.get(edge.child_code, 0) + 1
+
+    queue = [root_item_code]
+    topo_order = []
+    while queue:
+        current = queue.pop(0)
+        topo_order.append(current)
+        for edge in adjacency.get(current, []):
+            child_code = edge.child_code
+            indegree[child_code] = indegree.get(child_code, 0) - 1
+            if indegree[child_code] <= 0:
+                queue.append(child_code)
+
+    for code in reachable:
+        if code not in topo_order:
+            topo_order.append(code)
+
+    return adjacency, topo_order
+
+
+def calculate_mrp_plan(root_item_code, master_schedule, horizon=None):
+    """Run a basic planning MRP explosion using PlanningItem and multi-level BOM data."""
+    root_item_code = str(root_item_code or '').strip().upper()
+    master_schedule = [float(value or 0) for value in (master_schedule or [])]
+    if horizon is None:
+        horizon = len(master_schedule)
+    horizon = max(int(horizon or 0), len(master_schedule))
+    if horizon <= 0:
+        horizon = len(master_schedule)
+
+    if len(master_schedule) < horizon:
+        master_schedule = master_schedule + [0.0] * (horizon - len(master_schedule))
+    else:
+        master_schedule = master_schedule[:horizon]
+
+    item_map = {
+        item.item_code: item
+        for item in PlanningItem.objects.all()
+    }
+
+    adjacency, topo_order = _build_planning_bom_graph(root_item_code)
+    if root_item_code not in topo_order:
+        topo_order.insert(0, root_item_code)
+
+    gross_requirements_map = defaultdict(lambda: [0.0] * horizon)
+    gross_requirements_map[root_item_code] = master_schedule[:]
+
+    item_results = {}
+    warnings = []
+
+    for item_code in topo_order:
+        item = item_map.get(item_code)
+        if item is None:
+            item = PlanningItem(
+                item_code=item_code,
+                item_name='',
+                item_type=PlanningItem.ITEM_TYPE_PRODUCT if item_code == root_item_code else PlanningItem.ITEM_TYPE_MATERIAL,
+                lead_time=0,
+                on_hand=0,
+                scheduled_receipts=[],
+                lot_policy=PlanningItem.LOT_POLICY_L4L,
+                lot_size=0,
+                safety_stock=0,
+            )
+            warnings.append(f'Item {item_code} chưa có master item Planning, dùng mặc định.')
+
+        gross = gross_requirements_map[item_code][:horizon]
+        scheduled_receipts = _normalize_receipts_schedule(item.scheduled_receipts, horizon)
+        lead_time = max(int(getattr(item, 'lead_time', 0) or 0), 0)
+        on_hand = float(getattr(item, 'on_hand', 0) or 0)
+        safety_stock = float(getattr(item, 'safety_stock', 0) or 0)
+
+        projected = [0.0] * horizon
+        net_requirements = [0.0] * horizon
+        planned_order_receipts = [0.0] * horizon
+        planned_order_releases = [0.0] * horizon
+        past_due_release = 0.0
+
+        available_previous = on_hand
+        for index in range(horizon):
+            gross_req = float(gross[index] or 0)
+            scheduled_req = float(scheduled_receipts[index] or 0)
+            available_before = available_previous + scheduled_req
+            required_quantity = gross_req + safety_stock
+
+            if available_before >= required_quantity:
+                net_quantity = 0.0
+                receipt_quantity = 0.0
+                projected_available = available_before - gross_req
+            else:
+                net_quantity = max(required_quantity - available_before, 0.0)
+                receipt_quantity = _lot_size_for_planning_item(item, net_quantity)
+                projected_available = available_before + receipt_quantity - gross_req
+
+            net_requirements[index] = round(net_quantity, 2)
+            planned_order_receipts[index] = round(receipt_quantity, 2)
+            projected[index] = round(projected_available, 2)
+            available_previous = projected_available
+
+        for index, receipt_quantity in enumerate(planned_order_receipts):
+            if receipt_quantity <= 0:
+                continue
+
+            release_index = index - lead_time
+            if release_index < 0:
+                past_due_release += float(receipt_quantity or 0)
+                release_index = 0
+
+            planned_order_releases[release_index] += receipt_quantity
+
+        item_results[item_code] = {
+            'item_code': item_code,
+            'item_name': item.item_name or item_code,
+            'item_type': item.item_type,
+            'lead_time': lead_time,
+            'on_hand': round(on_hand, 2),
+            'safety_stock': round(safety_stock, 2),
+            'lot_policy': item.lot_policy,
+            'lot_size': float(getattr(item, 'lot_size', 0) or 0),
+            'gross_requirements': [round(value, 2) for value in gross],
+            'scheduled_receipts': [round(value, 2) for value in scheduled_receipts],
+            'projected_available': projected,
+            'net_requirements': net_requirements,
+            'planned_order_receipts': planned_order_receipts,
+            'planned_order_releases': [round(value, 2) for value in planned_order_releases],
+            'past_due_release': round(past_due_release, 2),
+        }
+
+        for edge in adjacency.get(item_code, []):
+            child_code = edge.child_code
+            child_gross = gross_requirements_map[child_code]
+            for index in range(horizon):
+                child_gross[index] += planned_order_releases[index] * float(edge.quantity_per_parent or 0)
+
+    flat_rows = []
+    for item_code in topo_order:
+        if item_code in item_results:
+            flat_rows.append(item_results[item_code])
+
+    summary = {
+        'root_item_code': root_item_code,
+        'horizon': horizon,
+        'item_count': len(flat_rows),
+        'warnings': warnings,
+        'missing_master_items': [row['item_code'] for row in flat_rows if row['item_code'] not in item_map],
+    }
+
+    return {
+        'summary': summary,
+        'items': flat_rows,
+    }
 
