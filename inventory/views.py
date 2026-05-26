@@ -572,7 +572,11 @@ def plan_synthesis(request):
 
 
 
-    forecast_mean, forecast_std, forecast_8, mae, rmse, mape = forecast_monthly_total(history_qs=history_qs)
+    # Read horizon from session so multiple pages can stay in sync
+    horizon = int(request.session.get('planning_horizon_months', 8) or 8)
+    horizon = max(3, min(12, horizon))
+
+    forecast_mean, forecast_std, forecast_values, mae, rmse, mape = forecast_monthly_total(history_qs=history_qs, forecast_horizon=horizon)
 
 
 
@@ -582,7 +586,7 @@ def plan_synthesis(request):
 
         last_month = history_qs.last().month
 
-        for idx, value in enumerate(forecast_8, start=1):
+        for idx, value in enumerate(forecast_values, start=1):
 
             forecast_rows.append({
 
@@ -594,7 +598,7 @@ def plan_synthesis(request):
 
     else:
 
-        for idx, value in enumerate(forecast_8, start=1):
+        for idx, value in enumerate(forecast_values, start=1):
 
             forecast_rows.append({
 
@@ -1363,6 +1367,7 @@ def plan_synthesis(request):
         'rmse': round(float(rmse or 0), 2),
 
         'mape': round(float(mape or 0), 2),
+        'horizon': horizon,
 
         'opening_inventory': opening_inventory,
 
@@ -2368,6 +2373,10 @@ def mps(request):
 
     }
 
+    # Sync horizon with planning selection stored in session
+    horizon = int(request.session.get('planning_horizon_months', 8) or 8)
+    horizon = max(3, min(12, horizon))
+    context['horizon'] = horizon
     return render(request, 'inventory/mps.html', context)
 
 
@@ -4113,6 +4122,8 @@ def forecast_monthly(request):
             selected_forecast_months = 8
 
         selected_forecast_months = max(3, min(12, selected_forecast_months))
+        # persist user selection so other pages (MPS, plan synthesis) can sync
+        request.session['planning_horizon_months'] = selected_forecast_months
 
         form = MonthlyForecastImportForm(request.POST, request.FILES)
 
