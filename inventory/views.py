@@ -4192,15 +4192,15 @@ def forecast_monthly(request):
 
 
 
-                result_message = f'─É├ú import {rows_imported} d├▓ng dß╗» liß╗çu sß║ún xuß║Ñt qu├í khß╗⌐ th├ánh c├┤ng.'
+                result_message = f'Đã import {rows_imported} dòng dữ liệu sản xuất thành công.'
 
                 if rows_skipped:
 
-                    result_message += f' Bỏ qua {rows_skipped} d├▓ng kh├┤ng hß╗úp lß╗ç.'
+                    result_message += f' Bỏ qua {rows_skipped} dòng không hợp lệ.'
 
             except Exception as e:
 
-                error_message = f'Lß╗ùi xß╗¡ l├╜ file: {str(e)}'
+                error_message = f'Lỗi xử lý file: {str(e)}'
 
         else:
 

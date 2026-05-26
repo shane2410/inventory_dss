@@ -681,16 +681,64 @@ function setPpaPanelExpanded() {
     setTopLayoutPpaOpen(true);
 }
 
-function updateOrderGridLabels(labels) {
-    if (!Array.isArray(labels) || labels.length === 0) return;
+function parseMonthLabel(label) {
+    if (typeof label !== 'string') return null;
 
-    const cells = Array.from(document.querySelectorAll('.order-cell'));
-    cells.forEach((cell, index) => {
-        const label = labels[index];
-        const span = cell.querySelector('span');
-        if (span && label != null) {
-            span.textContent = label;
+    const match = label.trim().match(/^(\d{2})\/(\d{4})$/);
+    if (!match) return null;
+
+    const month = Number(match[1]);
+    const year = Number(match[2]);
+    if (!Number.isFinite(month) || !Number.isFinite(year)) return null;
+
+    return { month, year };
+}
+
+function formatMonthLabel(month, year) {
+    const normalizedMonth = ((month - 1) % 12 + 12) % 12 + 1;
+    const normalizedYear = year + Math.floor((month - 1) / 12);
+    return `${String(normalizedMonth).padStart(2, '0')}/${normalizedYear}`;
+}
+
+function buildMonthLabelSeries(labels, totalCount) {
+    const normalizedLabels = Array.isArray(labels) ? labels.filter(label => typeof label === 'string' && label.trim() !== '') : [];
+    if (normalizedLabels.length === 0) return [];
+
+    const series = normalizedLabels.slice(0, totalCount);
+    const lastParsed = parseMonthLabel(series[series.length - 1]);
+
+    if (!lastParsed) return series;
+
+    let month = lastParsed.month;
+    let year = lastParsed.year;
+
+    while (series.length < totalCount) {
+        month += 1;
+        if (month > 12) {
+            month = 1;
+            year += 1;
         }
+        series.push(formatMonthLabel(month, year));
+    }
+
+    return series;
+}
+
+function updateOrderGridLabels(labels) {
+    const cells = Array.from(document.querySelectorAll('.order-cell'));
+    const displayLabels = buildMonthLabelSeries(labels, cells.length);
+
+    cells.forEach((cell, index) => {
+        const span = cell.querySelector('span');
+        if (!span) return;
+
+        const label = displayLabels[index];
+        if (label != null && label !== '') {
+            span.textContent = label;
+            return;
+        }
+
+        span.textContent = `Kì ${index + 1}`;
     });
 }
 
@@ -770,14 +818,6 @@ function restoreResultState() {
 
         const saved = JSON.parse(raw);
         if (!saved || !saved.result || !saved.result.success) return;
-
-        // Do not allow a previously-saved result to overwrite the input labels on load.
-        // Saved results can contain `input_labels` (month strings) which would replace
-        // our desired fixed input labels (Kì 1..Kì 12). Remove that field before
-        // rendering the saved result so labels stay as the template defines.
-        if (saved.result && saved.result.input_labels) {
-            delete saved.result.input_labels;
-        }
 
         displayResults(saved.result);
     } catch (error) {
@@ -872,6 +912,8 @@ function runMPS(productCode, C, H, beginInventory, orders) {
 function displayResults(result) {
     if (Array.isArray(result.input_labels) && result.input_labels.length > 0) {
         updateOrderGridLabels(result.input_labels);
+    } else {
+        updateOrderGridLabels([]);
     }
 
     // Hiển thị EPP
