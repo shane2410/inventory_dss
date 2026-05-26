@@ -55,54 +55,12 @@
                 <div>
                     <label class="form-label">Đơn hàng khách hàng theo tháng/kỳ</label>
                     <div class="order-grid">
+                        {% for label in forecast_month_labels %}
                         <div class="order-cell">
-                            <span>Kì 1</span>
-                            <input type="number" class="form-control order-input" data-month="1" min="0" step="1" placeholder="0">
+                            <span>{{ label }}</span>
+                            <input type="number" class="form-control order-input" data-month="{{ forloop.counter }}" min="0" step="1" placeholder="0">
                         </div>
-                        <div class="order-cell">
-                            <span>Kì 2</span>
-                            <input type="number" class="form-control order-input" data-month="2" min="0" step="1" placeholder="0">
-                        </div>
-                        <div class="order-cell">
-                            <span>Kì 3</span>
-                            <input type="number" class="form-control order-input" data-month="3" min="0" step="1" placeholder="0">
-                        </div>
-                        <div class="order-cell">
-                            <span>Kì 4</span>
-                            <input type="number" class="form-control order-input" data-month="4" min="0" step="1" placeholder="0">
-                        </div>
-                        <div class="order-cell">
-                            <span>Kì 5</span>
-                            <input type="number" class="form-control order-input" data-month="5" min="0" step="1" placeholder="0">
-                        </div>
-                        <div class="order-cell">
-                            <span>Kì 6</span>
-                            <input type="number" class="form-control order-input" data-month="6" min="0" step="1" placeholder="0">
-                        </div>
-                        <div class="order-cell">
-                            <span>Kì 7</span>
-                            <input type="number" class="form-control order-input" data-month="7" min="0" step="1" placeholder="0">
-                        </div>
-                        <div class="order-cell">
-                            <span>Kì 8</span>
-                            <input type="number" class="form-control order-input" data-month="8" min="0" step="1" placeholder="0">
-                        </div>
-                        <div class="order-cell">
-                            <span>Kì 9</span>
-                            <input type="number" class="form-control order-input" data-month="9" min="0" step="1" placeholder="0">
-                        </div>
-                        <div class="order-cell">
-                            <span>Kì 10</span>
-                            <input type="number" class="form-control order-input" data-month="10" min="0" step="1" placeholder="0">
-                        </div>
-                        <div class="order-cell">
-                            <span>Kì 11</span>
-                            <input type="number" class="form-control order-input" data-month="11" min="0" step="1" placeholder="0">
-                        </div>
-                        <div class="order-cell">
-                            <span>Kì 12</span>
-                            <input type="number" class="form-control order-input" data-month="12" min="0" step="1" placeholder="0">
-                        </div>
+                        {% endfor %}
                     </div>
                     <small class="text-muted d-block mt-2">Nhập số đơn hàng khách hàng cho từng tháng. Để trống nếu tháng đó không có đơn hàng.</small>
                 </div>
