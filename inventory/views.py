@@ -1603,7 +1603,11 @@ def product_decomposition(request):
 
 
 
-    forecast_mean, forecast_std, forecast_list, mae, rmse, mape = forecast_monthly_total(history_qs=history_qs)
+    # Read horizon from session to keep Planning pages in sync
+    horizon = int(request.session.get('planning_horizon_months', 8) or 8)
+    horizon = max(3, min(12, horizon))
+
+    forecast_mean, forecast_std, forecast_list, mae, rmse, mape = forecast_monthly_total(history_qs=history_qs, forecast_horizon=horizon)
 
 
 
@@ -2042,6 +2046,7 @@ def product_decomposition(request):
         'mape': mape,
 
         'months': months,
+        'horizon': horizon,
 
         'plan_rows': plan_rows,
 
