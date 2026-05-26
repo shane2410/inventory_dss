@@ -268,9 +268,11 @@ def forecast_product_monthly(product_id, sales_qs=None):
     return mean, std, forecast_list, mae, rmse, mape
 
 
-def forecast_monthly_total(history_qs=None):
+def forecast_monthly_total(history_qs=None, forecast_horizon=8):
     """Forecast a total monthly production series from imported month/quantity rows."""
     from .models import MonthlyProductionData
+
+    forecast_horizon = max(1, int(forecast_horizon or 8))
 
     if history_qs is None:
         history_qs = MonthlyProductionData.objects.filter(
@@ -280,7 +282,7 @@ def forecast_monthly_total(history_qs=None):
     df = pd.DataFrame(list(history_qs.values('month', 'quantity')))
 
     if df.empty or len(df) < 3:
-        return 0, 0, [0] * 8, 0, 0, 0
+        return 0, 0, [0] * forecast_horizon, 0, 0, 0
 
     df['month'] = pd.to_datetime(df['month'])
     df = df.sort_values('month')
@@ -312,7 +314,7 @@ def forecast_monthly_total(history_qs=None):
         )
 
         fit = model.fit(optimized=True)
-        forecast = pd.Series(fit.forecast(8))
+        forecast = pd.Series(fit.forecast(forecast_horizon))
         mean = float(forecast.mean())
         std = float(series.std())
         forecast_list = forecast.tolist()
@@ -321,13 +323,13 @@ def forecast_monthly_total(history_qs=None):
         print('Monthly total forecast error:', e)
         mean = float(series.mean())
         std = float(series.std(ddof=1))
-        forecast_list = [mean] * 8
+        forecast_list = [mean] * forecast_horizon
         forecast = pd.Series(forecast_list)
 
     if np.isnan(std) or std < 0:
         std = 0
 
-    actual = series[-8:]
+    actual = series[-forecast_horizon:]
     if len(actual) == len(forecast):
         try:
             mae = float(np.mean(np.abs(actual.values - forecast.values)))

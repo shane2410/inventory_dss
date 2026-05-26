@@ -3642,11 +3642,7 @@ def forecast(request):
 
     import math
 
-
-
     products = Product.objects.all()
-
-
 
     selected_product = None
 
@@ -4106,7 +4102,17 @@ def forecast_monthly(request):
 
 
 
+    forecast_months_choices = tuple(range(3, 13))
+    selected_forecast_months = 8
+
     if request.method == 'POST' and 'import_monthly_excel' in request.POST:
+
+        try:
+            selected_forecast_months = int(request.POST.get('forecast_months', 8))
+        except (TypeError, ValueError):
+            selected_forecast_months = 8
+
+        selected_forecast_months = max(3, min(12, selected_forecast_months))
 
         form = MonthlyForecastImportForm(request.POST, request.FILES)
 
@@ -4226,7 +4232,7 @@ def forecast_monthly(request):
 
 
 
-    forecast_mean, forecast_std, forecast_8, mae, rmse, mape = forecast_monthly_total(history_qs=history_qs)
+    forecast_mean, forecast_std, forecast_values, mae, rmse, mape = forecast_monthly_total(history_qs=history_qs, forecast_horizon=selected_forecast_months)
 
     forecast_result = None
 
@@ -4238,35 +4244,41 @@ def forecast_monthly(request):
 
             'std': round(forecast_std, 2),
 
-            'forecast_8': [round(x, 2) for x in forecast_8],
+            'forecast_values': [round(x, 2) for x in forecast_values],
 
             'mae': round(mae, 2),
 
             'rmse': round(rmse, 2),
 
             'mape': round(mape, 2),
+            'horizon': selected_forecast_months,
 
         }
 
 
 
-    forecast_8_rows = []
+    forecast_rows = []
+    forecast_month_labels = []
 
     if history_qs.exists():
 
         last_month = history_qs.last().month
 
-        for idx, value in enumerate(forecast_8, start=1):
+        for idx, value in enumerate(forecast_values, start=1):
 
             month_label = (last_month.replace(day=1) + timedelta(days=32 * idx)).replace(day=1)
 
-            forecast_8_rows.append({
+            forecast_month_labels.append(month_label.strftime('%m/%Y'))
+
+            forecast_rows.append({
 
                 'month': month_label.strftime('%m/%Y'),
 
                 'quantity': round(float(value or 0), 2),
 
             })
+    else:
+        forecast_month_labels = [f'Tháng {idx}' for idx in range(1, selected_forecast_months + 1)]
 
 
 
@@ -4282,7 +4294,10 @@ def forecast_monthly(request):
 
         'forecast_result': forecast_result,
 
-        'forecast_8_rows': forecast_8_rows,
+        'forecast_rows': forecast_rows,
+        'forecast_month_labels': forecast_month_labels,
+        'selected_forecast_months': selected_forecast_months,
+        'forecast_months_choices': forecast_months_choices,
 
     })
 

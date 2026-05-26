@@ -113,6 +113,24 @@
   transform: translateY(0) !important;
   box-shadow: 0 2px 8px rgba(74, 139, 168, 0.3) !important;
 }
+.forecast-import-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: end;
+}
+.forecast-import-form .field {
+  flex: 1 1 320px;
+  margin-bottom: 0;
+}
+.forecast-import-form .field select,
+.forecast-import-form .field input[type="file"] {
+  width: 100%;
+}
+.forecast-import-form .btn-import {
+  flex: 0 0 auto;
+  min-width: 180px;
+}
 input[type="file"]::file-selector-button {
   background: linear-gradient(135deg, #e4eff5 0%, #92cde285 100%);
   color: #394a53;
@@ -141,12 +159,20 @@ input[type="file"]::file-selector-button:active {
 </div>
 
 <div class="panel">
-  <form method="POST" enctype="multipart/form-data" class="control-form">
+  <form method="POST" enctype="multipart/form-data" class="control-form forecast-import-form">
     {% csrf_token %}
     <input type="hidden" name="import_monthly_excel" value="1">
     <div class="field">
       <label>File Excel</label>
       {{ form.file }}
+    </div>
+    <div class="field">
+      <label for="forecast_months">Số tháng dự báo</label>
+      <select id="forecast_months" name="forecast_months" class="form-control">
+        {% for month_count in forecast_months_choices %}
+        <option value="{{ month_count }}" {% if month_count == selected_forecast_months %}selected{% endif %}>{{ month_count }} tháng</option>
+        {% endfor %}
+      </select>
     </div>
     <button type="submit" class="btn-import">Import dữ liệu</button>
   </form>
@@ -191,7 +217,7 @@ input[type="file"]::file-selector-button:active {
 <div class="table-card section-spacer">
   <div class="table-head">
     <div>
-      <h2>Dự báo 8 tháng tới</h2>
+      <h2>Dự báo {{ selected_forecast_months }} tháng tới</h2>
       <p>Kết quả dự báo tổng dựa trên chuỗi dữ liệu sản xuất đã import.</p>
     </div>
   </div>
@@ -208,25 +234,16 @@ input[type="file"]::file-selector-button:active {
     <table>
       <tr>
         <th>Chỉ số</th>
-        {% for row in forecast_8_rows %}
-        <th>{{ row.month }}</th>
-        {% empty %}
-        <th>Tháng 1</th>
-        <th>Tháng 2</th>
-        <th>Tháng 3</th>
-        <th>Tháng 4</th>
-        <th>Tháng 5</th>
-        <th>Tháng 6</th>
-        <th>Tháng 7</th>
-        <th>Tháng 8</th>
+        {% for month_label in forecast_month_labels %}
+        <th>{{ month_label }}</th>
         {% endfor %}
       </tr>
       <tr>
         <th>Sản lượng dự báo</th>
-        {% for row in forecast_8_rows %}
+        {% for row in forecast_rows %}
         <td>{{ row.quantity|floatformat:2 }}</td>
         {% empty %}
-        <td colspan="8" class="empty-state">Chưa có dữ liệu dự báo tháng.</td>
+        <td colspan="{{ selected_forecast_months }}" class="empty-state">Chưa có dữ liệu dự báo tháng.</td>
         {% endfor %}
       </tr>
     </table>
