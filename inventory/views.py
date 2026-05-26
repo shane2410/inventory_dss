@@ -24,7 +24,7 @@ from .models import Product, Material, SalesData, Transaction, BOM, ProductRatio
 
 from .forms import ImportDataForm, MonthlyForecastImportForm, TransactionForm, PlanningItemForm
 
-from .services import aggregate_material_demand, abc_classification, disaggregate_forecast, forecast_monthly_total, forecast_product, forecast_product_monthly, run_dss, get_demand_by_product, get_orders_by_product, ppa_lot_sizing, calculate_mps, calculate_mrp_plan
+from .services import aggregate_material_demand, abc_classification, disaggregate_forecast, forecast_monthly_total, forecast_product, forecast_product_monthly, run_dss, get_demand_by_product, get_orders_by_product, ppa_lot_sizing, calculate_mps, calculate_mrp_plan, _calculate_mrp_pre_columns
 
 from .recommendations import build_dashboard_recommendations, build_inventory_alert_recommendations, build_inventory_watchlist_recommendations
 
@@ -2144,9 +2144,17 @@ def mrp(request):
 
     selected_root_code = ''
 
-    schedule = [0.0] * 12
+    last_mps_plan = request.session.get('last_mps_plan') or {}
+    forecast_horizon = len(last_mps_plan.get('mps') or [])
+    if forecast_horizon <= 0:
+        forecast_horizon = int(request.session.get('planning_horizon_months', 8) or 8)
+    forecast_horizon = max(3, min(12, forecast_horizon))
+
+    schedule = [0.0] * forecast_horizon
 
     schedule_source_label = None
+
+    mrp_forecast_month_labels = list(last_mps_plan.get('month_labels') or [])[:forecast_horizon]
 
     result = None
 
@@ -2157,18 +2165,13 @@ def mrp(request):
     error_message = None
 
     result_message = None
-
-
-
-    last_mps_plan = request.session.get('last_mps_plan') or {}
-
     if request.method != 'POST' and isinstance(last_mps_plan, dict):
 
         selected_root_code = str(last_mps_plan.get('root_item_code') or '').strip().upper()
 
         raw_schedule = last_mps_plan.get('mps') or []
 
-        for index in range(min(12, len(raw_schedule))):
+        for index in range(min(forecast_horizon, len(raw_schedule))):
 
             try:
 
@@ -2180,7 +2183,7 @@ def mrp(request):
 
         if selected_root_code and any(value > 0 for value in schedule):
 
-            schedule_source_label = 'Đã nạp từ MPS gần nhất'
+            schedule_source_label = f'Đã nạp từ MPS gần nhất ({forecast_horizon} kỳ)'
 
 
 
@@ -2254,7 +2257,7 @@ def mrp(request):
 
 
 
-            for index in range(12):
+            for index in range(forecast_horizon):
 
                 raw_value = (request.POST.get(f'mps_{index + 1}') or '').strip()
 
@@ -2280,11 +2283,14 @@ def mrp(request):
 
                 try:
 
-                    result = calculate_mrp_plan(selected_root_code, schedule, horizon=12)
+                    mrp_pre_columns = _calculate_mrp_pre_columns(selected_root_code)
+                    result = calculate_mrp_plan(selected_root_code, schedule, horizon=forecast_horizon, pre_columns=mrp_pre_columns)
 
                     mrp_rows = result.get('items', [])
 
                     mrp_summary = result.get('summary', {})
+
+                    forecast_horizon = int(mrp_summary.get('forecast_horizon') or forecast_horizon)
 
                     schedule_source_label = None
 
@@ -2303,6 +2309,29 @@ def mrp(request):
                 'mps': schedule,
 
             }
+
+
+    def _parse_month_label(raw_label):
+        text = str(raw_label or '').strip()
+        for fmt in ('%m/%Y', '%m-%Y', '%Y-%m', '%Y/%m'):
+            try:
+                return datetime.strptime(text, fmt).date().replace(day=1)
+            except ValueError:
+                continue
+        return None
+
+
+    mrp_pre_columns = int(mrp_summary.get('pre_columns') or 0) if isinstance(mrp_summary, dict) else 0
+    display_month_labels = list(mrp_forecast_month_labels)
+    forecast_start_month = _parse_month_label(display_month_labels[0]) if display_month_labels else None
+    if forecast_start_month and mrp_pre_columns > 0:
+        pre_labels = []
+        for offset in range(mrp_pre_columns, 0, -1):
+            month_value = pd.Timestamp(forecast_start_month) - pd.DateOffset(months=offset)
+            pre_labels.append(month_value.strftime('%m/%Y'))
+        display_month_labels = pre_labels + display_month_labels[:forecast_horizon]
+    else:
+        display_month_labels = display_month_labels[:forecast_horizon]
 
 
 
@@ -2324,7 +2353,7 @@ def mrp(request):
 
             {'index': index + 1, 'value': schedule[index]}
 
-            for index in range(12)
+            for index in range(forecast_horizon)
 
         ],
 
@@ -2342,7 +2371,9 @@ def mrp(request):
 
         'error_message': error_message,
 
-        'horizon': 12,
+        'horizon': forecast_horizon,
+        'mrp_month_labels': display_month_labels,
+        'mrp_pre_columns': mrp_pre_columns,
 
     })
 

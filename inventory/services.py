@@ -893,13 +893,47 @@ def _build_planning_bom_graph(root_item_code):
     return adjacency, topo_order
 
 
-def calculate_mrp_plan(root_item_code, master_schedule, horizon=None):
+def _calculate_mrp_pre_columns(root_item_code):
+    root_item_code = str(root_item_code or '').strip().upper()
+    item_map = {
+        item.item_code: item
+        for item in PlanningItem.objects.all()
+    }
+
+    adjacency, topo_order = _build_planning_bom_graph(root_item_code)
+    if root_item_code not in topo_order:
+        topo_order.insert(0, root_item_code)
+
+    root_lead_time = max(int(getattr(item_map.get(root_item_code), 'lead_time', 0) or 0), 0)
+    semi_lead_time = 0
+    material_lead_time = 0
+
+    for item_code in topo_order:
+        if item_code == root_item_code:
+            continue
+
+        item = item_map.get(item_code)
+        if item is None:
+            continue
+
+        lead_time = max(int(getattr(item, 'lead_time', 0) or 0), 0)
+        if item.item_type == PlanningItem.ITEM_TYPE_SEMI:
+            semi_lead_time = max(semi_lead_time, lead_time)
+        elif item.item_type == PlanningItem.ITEM_TYPE_MATERIAL:
+            material_lead_time = max(material_lead_time, lead_time)
+
+    return root_lead_time + semi_lead_time + material_lead_time
+
+
+def calculate_mrp_plan(root_item_code, master_schedule, horizon=None, pre_columns=None):
     """Run a basic planning MRP explosion using PlanningItem and multi-level BOM data."""
     root_item_code = str(root_item_code or '').strip().upper()
     master_schedule = [float(value or 0) for value in (master_schedule or [])]
     if horizon is None:
         horizon = len(master_schedule)
     horizon = max(int(horizon or 0), len(master_schedule))
+    pre_columns = max(int(pre_columns or 0), 0)
+    total_horizon = horizon + pre_columns
     if horizon <= 0:
         horizon = len(master_schedule)
 
@@ -907,6 +941,8 @@ def calculate_mrp_plan(root_item_code, master_schedule, horizon=None):
         master_schedule = master_schedule + [0.0] * (horizon - len(master_schedule))
     else:
         master_schedule = master_schedule[:horizon]
+
+    master_schedule = [0.0] * pre_columns + master_schedule
 
     item_map = {
         item.item_code: item
@@ -917,7 +953,7 @@ def calculate_mrp_plan(root_item_code, master_schedule, horizon=None):
     if root_item_code not in topo_order:
         topo_order.insert(0, root_item_code)
 
-    gross_requirements_map = defaultdict(lambda: [0.0] * horizon)
+    gross_requirements_map = defaultdict(lambda: [0.0] * total_horizon)
     gross_requirements_map[root_item_code] = master_schedule[:]
 
     item_results = {}
@@ -939,20 +975,20 @@ def calculate_mrp_plan(root_item_code, master_schedule, horizon=None):
             )
             warnings.append(f'Item {item_code} chưa có master item Planning, dùng mặc định.')
 
-        gross = gross_requirements_map[item_code][:horizon]
-        scheduled_receipts = _normalize_receipts_schedule(item.scheduled_receipts, horizon)
+        gross = gross_requirements_map[item_code][:total_horizon]
+        scheduled_receipts = _normalize_receipts_schedule(item.scheduled_receipts, total_horizon)
         lead_time = max(int(getattr(item, 'lead_time', 0) or 0), 0)
         on_hand = float(getattr(item, 'on_hand', 0) or 0)
         safety_stock = float(getattr(item, 'safety_stock', 0) or 0)
 
-        projected = [0.0] * horizon
-        net_requirements = [0.0] * horizon
-        planned_order_receipts = [0.0] * horizon
-        planned_order_releases = [0.0] * horizon
+        projected = [0.0] * total_horizon
+        net_requirements = [0.0] * total_horizon
+        planned_order_receipts = [0.0] * total_horizon
+        planned_order_releases = [0.0] * total_horizon
         past_due_release = 0.0
 
         available_previous = on_hand
-        for index in range(horizon):
+        for index in range(total_horizon):
             gross_req = float(gross[index] or 0)
             scheduled_req = float(scheduled_receipts[index] or 0)
             available_before = available_previous + scheduled_req
@@ -1004,7 +1040,7 @@ def calculate_mrp_plan(root_item_code, master_schedule, horizon=None):
         for edge in adjacency.get(item_code, []):
             child_code = edge.child_code
             child_gross = gross_requirements_map[child_code]
-            for index in range(horizon):
+            for index in range(total_horizon):
                 child_gross[index] += planned_order_releases[index] * float(edge.quantity_per_parent or 0)
 
     flat_rows = []
@@ -1014,7 +1050,9 @@ def calculate_mrp_plan(root_item_code, master_schedule, horizon=None):
 
     summary = {
         'root_item_code': root_item_code,
-        'horizon': horizon,
+        'horizon': total_horizon,
+        'forecast_horizon': horizon,
+        'pre_columns': pre_columns,
         'item_count': len(flat_rows),
         'warnings': warnings,
         'missing_master_items': [row['item_code'] for row in flat_rows if row['item_code'] not in item_map],
