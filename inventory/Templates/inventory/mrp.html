@@ -139,14 +139,14 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="input-cell">
-              <label>Horizon</label>
-              <input type="text" value="{{ horizon }} kỳ" disabled>
+            <div class="input-cell input-cell-action">
+              <label class="input-cell-spacer" aria-hidden="true">&nbsp;</label>
+              <button type="submit" class="btn-primary">Tính MRP</button>
             </div>
           </div>
 
           <div class="help-inline">
-            MPS input đã được ẩn. Hệ thống tự dùng {{ horizon }} kỳ lot-size từ MPS gần nhất của root item để tính MRP.
+            MPS input đã được ẩn. Hệ thống tự dùng lot-size từ MPS gần nhất của root item để tính MRP.
           </div>
 
           {% for schedule_item in schedule_inputs %}
@@ -157,10 +157,6 @@
             value="{{ schedule_item.value }}"
           />
           {% endfor %}
-
-          <div class="form-actions">
-            <button type="submit" class="btn-primary">Tính MRP</button>
-          </div>
         </form>
       </div>
 
@@ -526,13 +522,23 @@
 
   .input-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
+    align-items: end;
   }
 
   .input-cell {
     display: grid;
     gap: 6px;
+  }
+
+  .input-cell-action {
+    min-width: 160px;
+  }
+
+  .input-cell-spacer {
+    display: block;
+    min-height: 19px;
   }
 
   .input-cell label,
@@ -757,6 +763,14 @@
     .input-grid,
     .month-grid {
       grid-template-columns: 1fr 1fr;
+    }
+
+    .input-cell-action {
+      min-width: 0;
+    }
+
+    .input-cell-action button {
+      width: 100%;
     }
   }
 </style>
