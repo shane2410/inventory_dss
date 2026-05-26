@@ -2416,6 +2416,10 @@ def run_mps_api(request):
         from .models import MonthlyProductionData
 
 
+        horizon = int(request.session.get('planning_horizon_months', 8) or 8)
+        horizon = max(3, min(12, horizon))
+
+
 
         data = json.loads(request.body)
 
@@ -2443,7 +2447,7 @@ def run_mps_api(request):
 
         if product_code and not product_code.isdigit():
 
-            ratio_rows = list(ProductRatio.objects.filter(product_code=product_code).order_by('month'))
+            ratio_rows = list(ProductRatio.objects.filter(product_code=product_code).order_by('month')[:horizon])
 
             demand = [int(round(row.forecast_qty or 0)) for row in ratio_rows]
 
@@ -2463,7 +2467,7 @@ def run_mps_api(request):
 
                     (start_month + pd.DateOffset(months=index)).strftime('%m/%Y')
 
-                    for index in range(len(demand))
+                    for index in range(min(horizon, len(demand)))
 
                 ]
 
@@ -2477,7 +2481,7 @@ def run_mps_api(request):
 
                     (start_month + pd.DateOffset(months=index)).strftime('%m/%Y')
 
-                    for index in range(len(demand))
+                    for index in range(min(horizon, len(demand)))
 
                 ]
 
@@ -2485,7 +2489,7 @@ def run_mps_api(request):
 
         else:
 
-            demand = get_demand_by_product(product_code)
+            demand = get_demand_by_product(product_code)[:horizon]
 
 
 
