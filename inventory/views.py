@@ -4161,7 +4161,8 @@ def forecast_monthly(request):
 
 
     forecast_months_choices = tuple(range(3, 13))
-    selected_forecast_months = 8
+    selected_forecast_months = int(request.session.get('planning_horizon_months', 8) or 8)
+    selected_forecast_months = max(3, min(12, selected_forecast_months))
 
     if request.method == 'POST' and 'import_monthly_excel' in request.POST:
 
