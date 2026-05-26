@@ -24,6 +24,27 @@
     padding: 18px;
   }
 
+  .bom-hero {
+    padding: 22px 24px;
+    border-radius: 22px;
+    background: linear-gradient(135deg, #173b4d 0%, #2d6178 52%, #4e8ca1 100%);
+    color: #fff;
+    box-shadow: 0 16px 36px rgba(16, 33, 45, 0.16);
+    margin-bottom: 12px;
+  }
+
+  .bom-hero .hero-title {
+    margin: 0 0 8px;
+    font-size: 25px;
+    line-height: 1.1;
+    color: #fff;
+  }
+
+  .bom-hero .page-subtitle {
+    margin: 0;
+    color: #ffffff;
+  }
+
   .bom-title {
     margin: 0;
     font-size: 24px;
@@ -267,9 +288,9 @@
 </style>
 
 <div class="bom-page">
-  <section class="bom-card">
-    <h1 class="bom-title">Thêm BOM đa cấp</h1>
-    <p class="bom-subtitle">Nhập tay quan hệ cha-con cho MRP đa cấp. Quy tắc mã: Product bắt đầu bằng P, Material bắt đầu bằng RM.</p>
+  <section class="bom-card bom-hero">
+    <h1 class="page-title hero-title">Thêm BOM đa cấp</h1>
+    <p class="page-subtitle">Nhập tay quan hệ cha-con cho MRP đa cấp. Quy tắc mã: Product bắt đầu bằng P, Material bắt đầu bằng RM.</p>
   </section>
 
   {% if result_message %}

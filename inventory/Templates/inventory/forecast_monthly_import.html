@@ -148,13 +148,36 @@ input[type="file"]::file-selector-button {
 input[type="file"]::file-selector-button:active {
   background: linear-gradient(135deg, #2d5a75 0%, #3d7a95 100%);
 }
+
+/* Hero style matching Plan Synthesis */
+.page-hero {
+  padding: 22px 24px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #173b4d 0%, #2d6178 52%, #4e8ca1 100%);
+  color: #fff;
+  box-shadow: 0 16px 36px rgba(16, 33, 45, 0.16);
+  margin-bottom: 12px;
+}
+.page-hero .page-title {
+  margin: 0 0 8px;
+  font-size: 30px;
+  line-height: 1.1;
+  font-weight: 800;
+}
+.page-hero p {
+  margin: 0;
+  max-width: 980px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.6;
+}
 </style>
 {% endblock %}
 {% block content %}
 
 <div class="page-hero">
   <div>
-    <h1 class="page-title">Dự báo</h1>
+    <h1 class="page-title hero-title">Dự báo</h1>
+    <p class="page-subtitle">Dự báo tổng sản lượng sản xuất theo tháng — dùng làm nguồn dữ liệu cho Planning.</p>
   </div>
 </div>
 

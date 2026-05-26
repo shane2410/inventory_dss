@@ -9,7 +9,7 @@
         <p>Lập kế hoạch sản xuất chính (MPS) sử dụng phương pháp PPA (Part Period Algorithm) - Xác định kích cỡ lô sản xuất/đặt hàng tối ưu trong MPS nhằm cân bằng giữa chi phí thiết lập (C) và chi phí lưu kho (H).</p>
     </div>
 
-    <div style="padding: 22px 4px;">
+    <div style="padding: 0 4px;">
     <div class="mps-top-layout" style="margin-bottom: 20px;">
         <div class="mps-top-left">
             <div class="card mps-main-card">
@@ -115,12 +115,12 @@
     <!-- Wrapper cho EPP và MPS Results -->
     <div id="mps-results-wrapper" class="mps-results-container">
         <!-- Kết quả EPP -->
-        <div id="epp-result" class="card epp-card-inner" style="margin-bottom: 0; display: none;">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0 section-title-lg">Chỉ số EPP (Economic Part Period)</h5>
-            </div>
-            <div class="card-body">
-                <p class="lead">EPP = <strong id="epp-value">0</strong> kỳ</p>
+        <div id="epp-result" class="epp-card-inner" style="display: none;">
+            <div class="epp-summary">
+                <div class="epp-summary-label">Chỉ số EPP (Economic Part Period)</div>
+                <div class="epp-summary-value">
+                    EPP = <strong id="epp-value">0</strong> kỳ
+                </div>
             </div>
         </div>
         
@@ -208,18 +208,20 @@
     }
 
     .mps-main-card .card-header {
-        padding: 0px 20px;
+        padding: 22px 19px 7px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.15);
     }
 
     .mps-main-card .card-header h5 {
-        font-size: 1.02rem;
+        font-size: 18px;
         font-weight: 700;
         letter-spacing: 0.2px;
+        line-height: 1.1;
+        margin: 0;
     }
 
     .mps-main-card .card-body {
-        padding: 2px 18px 15px;
+        padding: 10px 18px 15px;
         background: #f8fbff;
     }
 
@@ -342,16 +344,18 @@
     }
 
     .ppa-panel .card-header {
-        padding: 2px 14px;
+        padding: 22px 15px;
     }
 
     .ppa-panel .card-header h5 {
-        font-size: 1.02rem;
+        font-size: 18px;
         font-weight: 700;
+        line-height: 1.1;
+        margin: 0;
     }
 
     .ppa-title {
-        font-size: calc(0.95rem + 1px);
+        font-size: 18px;
         font-weight: 700;
     }
 
@@ -361,7 +365,7 @@
     }
 
     .ppa-panel .card-body {
-        padding: 2px 14px 0px;
+        padding: 0px 14px 0px;
         background: #fcfef9;
     }
 
@@ -556,24 +560,47 @@
     }
 
     .epp-card-inner {
-        border: none;
-        box-shadow: none;
+        border: 1px solid #cfdcea;
+        border-left: 5px solid #4f88a0;
+        border-radius: 16px;
+        box-shadow: 0 8px 22px rgba(28, 52, 84, 0.08);
         margin-bottom: 10px;
+        overflow: hidden;
+        background: linear-gradient(180deg, #f7fbff 0%, #ffffff 100%);
     }
 
-    .epp-card-inner .card-header {
-        border-radius: 8px;
-        padding: 0px 8px !important;
+    .epp-summary {
+        padding: 14px 16px 13px;
     }
 
-    .epp-card-inner .card-body {
-        padding: 0px 40px !important;
+    .epp-summary-label {
+        margin: 0 0 6px;
+        font-size: 0.86rem;
+        font-weight: 800;
+        letter-spacing: 0.2px;
+        color: #295064;
+        text-transform: none;
     }
 
-    .epp-card-inner .card-header h5 {
-        font-size: 1.0rem !important;
+    .epp-summary-value {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 6px;
+        width: fit-content;
+        padding: 8px 12px;
+        border-radius: 12px;
+        background: #ffffff;
+        border: 1px solid #d9e6ef;
+        color: #1d3446;
+        font-size: 0.98rem;
         font-weight: 700;
-        margin: 0 !important;
+        line-height: 1.2;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    }
+
+    .epp-summary-value strong {
+        font-size: 1.1rem;
+        color: #173b4d;
     }
 
     .mps-table-inner .card {
