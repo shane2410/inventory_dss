@@ -1415,7 +1415,7 @@ def plan_synthesis(request):
 
         'error_message': None,
 
-        'forecast_note': 'OT limit = OT_t <= alpha x regular capacity. If overtime cost is blank, overtime is disabled. If subcontract cost is blank, subcontract is disabled. Inventory policy is treated as an upper limit I_t <= I_max. Production quantities are rounded to whole units.',
+        'forecast_note': 'Giới hạn làm thêm giờ = OT_t <= alpha x năng lực sản xuất thường kỳ. Nếu chi phí làm thêm giờ để trống thì phần làm thêm giờ sẽ bị tắt. Nếu chi phí thuê ngoài để trống thì phần thuê ngoài sẽ bị tắt. Mức tồn kho mục tiêu được hiểu là giới hạn trên I_t <= I_max. Sản lượng được làm tròn về số nguyên đơn vị.',
 
         'forecast_total': round(sum(item['quantity'] for item in forecast_rows), 2),
 

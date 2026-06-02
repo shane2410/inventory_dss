@@ -311,7 +311,7 @@ class MPSConfiguration(models.Model):
 # SELECTED PRODUCT FOR MPS (Danh sách sản phẩm được chọn ở trang Phân rã)
 # =========================
 class SelectedProductForMPS(models.Model):
-    """Lưu lịch sử các sản phẩm (ID_P) được chọn tại trang Phân rã sản phẩm"""
+    """Lưu lịch sử các sản phẩm (ID_P) được chọn tại trang Phân rã kế hoạch"""
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     selected_at = models.DateTimeField(auto_now=True)
 

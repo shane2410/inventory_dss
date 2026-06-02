@@ -278,51 +278,51 @@
         <input type="number" step="0.01" name="opening_inventory" value="{{ opening_inventory|stringformat:'g' }}">
       </div>
       <div class="plan-field">
-        <label>Workers khởi đầu</label>
+        <label>Số công nhân ban đầu</label>
         <input type="number" step="1" name="workers" value="{{ workers|stringformat:'d' }}">
       </div>
       <div class="plan-field">
-        <label>Productivity / worker</label>
+        <label>Năng suất / công nhân</label>
         <input type="number" step="0.01" name="productivity" value="{{ productivity|stringformat:'g' }}">
       </div>
       <div class="plan-field">
-        <label>OT limit (%)</label>
+        <label>Giới hạn làm thêm giờ (%)</label>
         <input type="number" step="0.01" name="ot_limit_pct" value="{{ ot_limit_pct|stringformat:'g' }}">
       </div>
       <div class="plan-field">
-        <label>Inventory policy</label>
+        <label>Mức tồn kho mục tiêu</label>
         <input type="number" step="0.01" name="inventory_policy" value="{{ inventory_policy|stringformat:'g' }}">
       </div>
       <div class="plan-field">
-        <label>Regular cost / unit</label>
+        <label>Chi phí sản xuất thường / đơn vị</label>
         <input type="number" step="0.01" name="regular_cost" value="{{ regular_cost|stringformat:'g' }}">
       </div>
       <div class="plan-field">
-        <label>Overtime cost / unit</label>
+        <label>Chi phí làm thêm giờ / đơn vị</label>
         <input type="number" step="0.01" name="overtime_cost" value="{{ overtime_cost|stringformat:'g' }}">
       </div>
       <div class="plan-field">
-        <label>Subcontract cost / unit</label>
+        <label>Chi phí thuê ngoài / đơn vị</label>
         <input type="number" step="0.01" name="subcontract_cost" value="{{ subcontract_cost|stringformat:'g' }}">
       </div>
       <div class="plan-field">
-        <label>Inventory cost / unit</label>
+        <label>Chi phí tồn kho / đơn vị</label>
         <input type="number" step="0.01" name="inventory_cost" value="{{ inventory_cost|stringformat:'g' }}">
       </div>
       <div class="plan-field">
-        <label>Backorder cost / unit</label>
+        <label>Chi phí thiếu hàng / đơn vị</label>
         <input type="number" step="0.01" name="backorder_cost" value="{{ backorder_cost|stringformat:'g' }}">
       </div>
       <div class="plan-field">
-        <label>Hire cost / worker</label>
+        <label>Chi phí tuyển mới / công nhân</label>
         <input type="number" step="0.01" name="hire_cost" value="{{ hire_cost|stringformat:'g' }}">
       </div>
       <div class="plan-field">
-        <label>Layoff cost / worker</label>
+        <label>Chi phí cho nghỉ việc / công nhân</label>
         <input type="number" step="0.01" name="layoff_cost" value="{{ layoff_cost|stringformat:'g' }}">
       </div>
       <div class="plan-field">
-        <label>Safety Stock</label>
+        <label>Tồn kho an toàn</label>
         <input type="number" step="1" name="safety_stock" value="{{ safety_stock|default:0|stringformat:'g' }}">
       </div>
       <div class="plan-field full">
@@ -348,19 +348,19 @@
     <div class="info-grid" style="margin-top:14px;">
       <div class="info-card">
         <h3>Năng lực hiện tại</h3>
-        <p>Workers khởi đầu: {{ workers }}.</p>
-        <p>Regular capacity tháng đầu: {{ plan_rows.0.regular_capacity|floatformat:2 }} units/tháng.</p>
-        <p>OT capacity tháng đầu: {{ plan_rows.0.overtime_capacity|floatformat:2 }} units/tháng.</p>
+        <p>Số công nhân ban đầu: {{ workers }}.</p>
+        <p>Năng lực sản xuất thường kỳ tháng đầu: {{ plan_rows.0.regular_capacity|floatformat:2 }} đơn vị/tháng.</p>
+        <p>Năng lực làm thêm giờ tháng đầu: {{ plan_rows.0.overtime_capacity|floatformat:2 }} đơn vị/tháng.</p>
       </div>
       <div class="info-card">
-        <h3>Constraint</h3>
+        <h3>Ràng buộc</h3>
         <p>{{ forecast_note }}</p>
       </div>
       <div class="info-card">
-        <h3>Workforce setup</h3>
-        <p>Thay đổi workforce tích lũy: {{ workforce_total_change }} worker(s).</p>
-        <p>Workforce cuối kỳ: {{ workforce_end|floatformat:0 }} worker(s).</p>
-        <p>Chi phí thay đổi workforce: {{ workforce_cost|floatformat:2 }}.</p>
+        <h3>Điều chỉnh nhân sự</h3>
+        <p>Tổng biến động nhân sự: {{ workforce_total_change }} công nhân.</p>
+        <p>Số công nhân cuối kỳ: {{ workforce_end|floatformat:0 }} công nhân.</p>
+        <p>Chi phí thay đổi nhân sự: {{ workforce_cost|floatformat:2 }}.</p>
       </div>
     </div>
   </div>

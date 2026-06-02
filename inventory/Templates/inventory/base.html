@@ -6,7 +6,7 @@
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
     />
-    <title>Hệ thống hỗ trợ quyết định tồn kho</title>
+    <title>{% block title %}Hệ thống hỗ trợ quyết định tồn kho{% endblock %}</title>
     <!-- Select2 CSS -->
     <link
       href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css"
@@ -929,7 +929,7 @@
               class="{% if request.resolver_match.url_name == 'product-decomposition' %}active{% endif %}"
             >
               <i class="fas fa-project-diagram"></i>
-              <span>Phân rã sản phẩm</span>
+              <span>Phân rã kế hoạch</span>
             </a>
             <a
               href="{% url 'mps' %}"

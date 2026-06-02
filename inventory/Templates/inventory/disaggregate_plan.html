@@ -1,6 +1,7 @@
 {% extends "inventory/base.html" %}
 {% load humanize %}
 {% load custom_filters %}
+{% block title %}Phân rã kế hoạch{% endblock %}
 {% block extra_styles %}
 <style>
 .disagg-layout {
@@ -231,7 +232,7 @@
 {% block content %}
 <div class="disagg-layout">
   <div class="disagg-hero">
-    <h1 class="page-title hero-title">Phân rã sản phẩm</h1>
+    <h1 class="page-title hero-title">Phân rã kế hoạch</h1>
     <p>
       Trang này lấy dự báo tổng {{ horizon|default:8 }} tháng từ kế hoạch tháng hiện có, rồi phân bổ xuống từng sản phẩm theo tỷ lệ đã lưu.
       Dữ liệu được lưu theo cặp Product - Month để bạn chỉnh lại nhiều lần mà không mất lịch sử tháng.
