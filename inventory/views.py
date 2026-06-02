@@ -834,6 +834,8 @@ def plan_synthesis(request):
 
             'forecast_rows': forecast_rows,
 
+            'forecast_note': 'Giới hạn làm thêm giờ = OT_t <= alpha x năng lực sản xuất thường kỳ. Nếu chi phí làm thêm giờ để trống thì phần làm thêm giờ sẽ bị tắt. Nếu chi phí thuê ngoài để trống thì phần thuê ngoài sẽ bị tắt. Mức tồn kho mục tiêu được hiểu là giới hạn trên I_t <= I_max. Sản lượng được làm tròn về số nguyên đơn vị.',
+
             'defaults': defaults,
 
             'plan_rows': [],
