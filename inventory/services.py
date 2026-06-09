@@ -741,7 +741,7 @@ def calculate_mps(demand, orders, lots, begin_inventory=0):
     Trả về:
     - projected_on_hand: tồn kho dự báo
     - atp: Available To Promise
-    - net_inventory: tồn kho trước MPS (= tồn kho ban đầu - nhu cầu)
+    - net_inventory: tồn kho trước MPS (= tồn kho trước kỳ - max(nhu cầu dự báo, đơn hàng KH))
     """
     n = len(demand)
 
@@ -751,10 +751,14 @@ def calculate_mps(demand, orders, lots, begin_inventory=0):
 
     for t in range(n):
         # Tính tồn kho trước MPS (net inventory)
+        current_demand = demand[t] if t < len(demand) else 0
+        current_orders = orders[t] if t < len(orders) else 0
+        period_requirement = max(current_demand, current_orders)
+
         if t == 0:
-            net_inventory[t] = begin_inventory - demand[t]
+            net_inventory[t] = begin_inventory - period_requirement
         else:
-            net_inventory[t] = projected[t-1] - demand[t]
+            net_inventory[t] = projected[t-1] - period_requirement
 
         # Tính tồn kho dự kiến = tồn kho trước MPS + cỡ lô
         projected[t] = net_inventory[t] + lots[t]

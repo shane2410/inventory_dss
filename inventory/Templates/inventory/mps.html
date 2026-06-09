@@ -119,7 +119,7 @@
             <div class="epp-summary">
                 <div class="epp-summary-label">Chỉ số EPP (Economic Part Period)</div>
                 <div class="epp-summary-value">
-                    EPP = <strong id="epp-value">0</strong> kỳ
+                    EPP = <strong id="epp-value">0</strong>
                 </div>
             </div>
         </div>
@@ -925,9 +925,9 @@ function displayResults(result) {
         { label: 'Nhu cầu dự báo (Demand)', key: 'demand', valueClass: '' },
         { label: 'Đơn hàng KH (Orders)', key: 'orders', valueClass: '' },
         { label: 'Tồn kho trước MPS (Net Inventory)', key: 'net_inventory', valueClass: '' },
-        { label: 'Cỡ lô sản xuất (Lot Size)', key: 'lot_size', valueClass: 'mps-value-lot' },
+        { label: 'Kế hoạch sản xuất chính (MPS)', key: 'lot_size', valueClass: 'mps-value-lot' },
         { label: 'Tồn kho dự kiến (Projected On-hand)', key: 'projected_on_hand', valueClass: 'mps-value-projected' },
-        { label: 'Còn lại để bán (ATP)', key: 'atp', valueClass: 'mps-value-atp' }
+        { label: 'Tồn kho khả dụng (ATP)', key: 'atp', valueClass: 'mps-value-atp' }
     ];
 
     const monthHeader = document.createElement('tr');
