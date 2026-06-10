@@ -20,7 +20,7 @@ import pandas as pd
 
 from openpyxl import Workbook, load_workbook
 
-from .models import Product, Material, SalesData, Transaction, BOM, ProductRatio, DisaggregatedPlan, CustomerOrder, MPSConfiguration, SelectedProductForMPS, PlanningItem, MultiLevelBOMEdge
+from .models import Product, Material, SalesData, Transaction, BOM, ProductRatio, DisaggregatedPlan, CustomerOrder, MPSConfiguration, SelectedProductForMPS, PlanningItem, MultiLevelBOMEdge, PlanningConfiguration, PlanningSnapshot
 
 from .forms import ImportDataForm, MonthlyForecastImportForm, TransactionForm, PlanningItemForm
 
@@ -333,7 +333,6 @@ def optimize_aggregate_plan_lp(demand, regular_caps, cost_params, alpha=0.2, saf
         
 
         # Overtime capacity
-
         if cost_params['overtime_cost'] > 0:
 
             model += O[t] <= alpha * regular_caps[t]
@@ -1343,6 +1342,50 @@ def plan_synthesis(request):
 
 
     first_plan_row = plan_rows[0] if plan_rows else {}
+
+    if feasibility_ok:
+        try:
+            PlanningSnapshot.objects.create(
+                snapshot_type=PlanningSnapshot.SNAPSHOT_TYPE_AGGREGATE_PLAN,
+                payload={
+                    'horizon': horizon,
+                    'summary_cards': summary_cards,
+                    'forecast_rows': forecast_rows,
+                    'plan_rows': plan_rows,
+                    'planning_metrics': planning_metrics,
+                    'chart_data': {
+                        'labels': [row['month'] for row in forecast_rows],
+                        'demand': [int(row['quantity']) for row in forecast_rows],
+                        'production': [int(row['production']) for row in plan_rows],
+                        'shortage': [int(row['backorder']) for row in plan_rows],
+                    },
+                    'month_rows': [
+                        {
+                            'month': row['month'],
+                            'demand': int(row['forecast']),
+                            'production': int(row['production']),
+                            'shortage': int(row['backorder']),
+                            'ending_inventory': int(row['ending_inventory']),
+                        }
+                        for row in plan_rows
+                    ],
+                    'alerts': [
+                        f"⚠ Tháng {row['month']}: Thiếu hụt trước sản xuất (-{int(row['backorder']):,})"
+                        for row in plan_rows
+                        if row.get('backorder', 0) > 0
+                    ] or ['✅ Không ghi nhận tháng thiếu hàng trong kế hoạch hiện tại.'],
+                    'planning_source_note': 'Dữ liệu Planning riêng: forecast tháng + kế hoạch LP',
+                    'forecast_mean': round(float(forecast_mean or 0), 2),
+                    'forecast_std': round(float(forecast_std or 0), 2),
+                    'mae': round(float(mae or 0), 2),
+                    'rmse': round(float(rmse or 0), 2),
+                    'mape': round(float(mape or 0), 2),
+                    'feasibility_message': None if feasibility_ok else 'KHÔNG KHẢ THI: tổng công suất hiện tại nhỏ hơn tổng nhu cầu; không thể lập kế hoạch thoả mãn các ràng buộc.',
+                    'total_cost': int(round(total_cost)),
+                },
+            )
+        except Exception:
+            pass
 
 
 
@@ -2428,6 +2471,409 @@ def mps(request):
 
 
 
+@role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
+def planning_overview(request):
+    from .models import MonthlyProductionData
+
+    def _format_int(value):
+        try:
+            return f"{int(round(float(value or 0))):,}"
+        except (TypeError, ValueError):
+            return '0'
+
+    def _generate_insights(demand, mps):
+        insights = []
+        demand_values = [float(x or 0) for x in demand if x is not None]
+        mps_values = [float(x or 0) for x in mps if x is not None]
+        if not demand_values or not mps_values:
+            return insights
+
+        avg_demand = sum(demand_values) / len(demand_values)
+        variation = max(demand_values) - min(demand_values)
+        if avg_demand > 0 and variation / avg_demand < 0.3:
+            insights.append('Nhu cầu dự báo tương đối ổn định theo thời gian.')
+        else:
+            insights.append('Nhu cầu dự báo biến động đáng kể giữa các kỳ.')
+
+        zero_periods = sum(1 for x in mps_values if x == 0)
+        if zero_periods >= len(mps_values) * 0.3:
+            insights.append('MPS có xu hướng sản xuất theo lô, nhiều kỳ không sản xuất.')
+
+        mismatch_count = 0
+        for d, p in zip(demand_values, mps_values):
+            if d > 0 and p > 0 and abs(p - d) / d > 0.5:
+                mismatch_count += 1
+        if mismatch_count > 0:
+            insights.append('Sản lượng MPS chưa bám sát nhu cầu dự báo ở một số kỳ.')
+
+        if max(mps_values) > avg_demand * 1.5:
+            insights.append('Phát hiện các đỉnh sản lượng lớn, phù hợp logic sản xuất bulk/step.')
+
+        if zero_periods > 0:
+            insights.append('Tồn kho có thể dao động mạnh do lịch sản xuất không đều.')
+
+        return insights
+
+    # Read latest aggregate plan snapshot and latest MPS run snapshot
+    agg_snapshot = PlanningSnapshot.objects.filter(
+        snapshot_type=PlanningSnapshot.SNAPSHOT_TYPE_AGGREGATE_PLAN
+    ).order_by('-created_at').first()
+    mps_snapshot = PlanningSnapshot.objects.filter(
+        snapshot_type=PlanningSnapshot.SNAPSHOT_TYPE_MPS_RUN
+    ).order_by('-created_at').first()
+
+    agg_payload = agg_snapshot.payload or {} if agg_snapshot else {}
+    mps_payload = mps_snapshot.payload or {} if mps_snapshot else {}
+
+    # Total cost comes from aggregate plan (if available)
+    total_cost = int(agg_payload.get('total_cost') or 0)
+
+    # Compute product-level totals from latest MPS snapshot
+    total_demand = 0
+    total_mps = 0
+    month_rows = agg_payload.get('month_rows') or []
+    chart_data = {'labels': [], 'demand': [], 'production': []}
+    alerts = []
+    overview_insights = ['Chưa có snapshot MPS gần nhất để nhận xét.']
+
+    if mps_payload:
+        # prefer explicit arrays if present, otherwise derive from result_data
+        demand_arr = mps_payload.get('demand')
+        mps_arr = mps_payload.get('mps')
+        result_data = mps_payload.get('result_data') or []
+
+        if not demand_arr and result_data:
+            demand_arr = [int(r.get('demand') or 0) for r in result_data]
+        if not mps_arr and result_data:
+            mps_arr = [int(r.get('mps') or 0) for r in result_data]
+
+        total_demand = sum(int(x or 0) for x in (demand_arr or []))
+        total_mps = sum(int(x or 0) for x in (mps_arr or []))
+
+        # Build month rows from MPS snapshot when available so the table and chart stay aligned.
+        if result_data:
+            month_rows = []
+            for r in result_data:
+                month_rows.append({
+                    'month': r.get('month') or r.get('month_label') or '',
+                    'demand': int(r.get('demand') or 0),
+                    'production': int(r.get('mps') or 0),
+                    'shortage': int(r.get('net_inventory') * -1) if r.get('net_inventory') and r.get('net_inventory') < 0 else 0,
+                    'ending_inventory': int(r.get('projected_on_hand') or 0),
+                })
+
+        # Always render the chart from the latest MPS snapshot.
+        chart_data = {
+            'labels': mps_payload.get('month_labels') or [r.get('month_label') for r in result_data],
+            'demand': [int(x or 0) for x in (demand_arr or [])],
+            'production': [int(x or 0) for x in (mps_arr or [])],
+        }
+
+        demand_series = chart_data.get('demand') or []
+        mps_series = chart_data.get('production') or []
+        insights = _generate_insights(demand_series, mps_series)
+        overview_insights = insights or ['Nhu cầu và MPS đang được đồng bộ từ snapshot gần nhất.']
+
+        for row in result_data:
+            month_label = str(row.get('month_label') or row.get('month') or '').strip()
+            atp_value = row.get('atp')
+            projected_on_hand = row.get('projected_on_hand')
+            net_inventory = row.get('net_inventory')
+            if atp_value is not None and int(atp_value) == 0 and month_label:
+                alerts.append(f'⚠ ATP = 0 tại tháng {month_label} → không nhận thêm đơn')
+            if net_inventory is not None and int(net_inventory) < 0 and month_label:
+                alerts.append(f'⚠ Tháng {month_label}: Thiếu hụt trước sản xuất (-{_format_int(abs(net_inventory))})')
+
+        if not alerts and result_data:
+            alerts = ['✅ Không ghi nhận tháng thiếu hàng trong kế hoạch hiện tại.']
+
+    # Build summary cards: keep total cost, MPS-driven demand/production totals, and the report export slot.
+    summary_cards = [
+        {'label': 'TỔNG CHI PHÍ KẾ HOẠCH', 'value': total_cost, 'note': ''},
+        {'label': 'TỔNG NHU CẦU DỰ BÁO', 'value': int(total_demand or 0), 'note': '(sản phẩm MPS gần nhất)'},
+        {'label': 'TỔNG SẢN LƯỢNG MPS', 'value': int(total_mps or 0), 'note': '(sản phẩm MPS gần nhất)'},
+    ]
+
+    return render(request, 'inventory/planning_overview.html', {
+        'title': 'Tổng quan Planning',
+        'horizon': int(agg_payload.get('horizon') or mps_payload.get('horizon') or 8),
+        'summary_cards': summary_cards,
+        'chart_data': chart_data,
+        'month_rows': month_rows,
+        'alerts': alerts,
+        'overview_insights': overview_insights,
+        'planning_source_note': agg_payload.get('planning_source_note', 'Dữ liệu Planning riêng'),
+        'forecast_mean': agg_payload.get('forecast_mean', 0),
+        'forecast_std': agg_payload.get('forecast_std', 0),
+        'mape': agg_payload.get('mape', 0),
+        'feasibility_message': agg_payload.get('feasibility_message'),
+    })
+
+    def _to_float(raw_value, default=0.0):
+        try:
+            if raw_value is None:
+                return float(default)
+            text = str(raw_value).strip().replace(',', '')
+            if text == '':
+                return float(default)
+            return float(text)
+        except (TypeError, ValueError):
+            return float(default)
+
+    def _to_int(raw_value, default=0):
+        try:
+            if raw_value is None:
+                return int(default)
+            text = str(raw_value).strip().replace(',', '')
+            if text == '':
+                return int(default)
+            return int(float(text))
+        except (TypeError, ValueError):
+            return int(default)
+
+    def _add_months(base_month, months):
+        month_index = base_month.month - 1 + months
+        year = base_month.year + month_index // 12
+        month = month_index % 12 + 1
+        return base_month.replace(year=year, month=month, day=1)
+
+    history_qs = MonthlyProductionData.objects.filter(
+        source=MonthlyProductionData.SOURCE_PLANNING
+    ).order_by('month')
+
+    horizon = int(request.session.get('planning_horizon_months', 8) or 8)
+    horizon = max(3, min(12, horizon))
+
+    forecast_mean, forecast_std, forecast_values, mae, rmse, mape = forecast_monthly_total(
+        history_qs=history_qs,
+        forecast_horizon=horizon,
+    )
+
+    forecast_rows = []
+    if history_qs.exists():
+        last_month = history_qs.last().month
+        for idx, value in enumerate(forecast_values, start=1):
+            forecast_rows.append({
+                'month': _add_months(last_month, idx).strftime('%m/%Y'),
+                'quantity': int(math.ceil(float(value or 0))),
+            })
+    else:
+        for idx, value in enumerate(forecast_values, start=1):
+            forecast_rows.append({
+                'month': f'Tháng {idx}',
+                'quantity': int(math.ceil(float(value or 0))),
+            })
+
+    config = PlanningConfiguration.objects.last()
+    defaults = {
+        'opening_inventory': 0,
+        'workers': 50,
+        'productivity': 150,
+        'regular_cost': 1,
+        'overtime_cost': 1.2,
+        'subcontract_cost': 1.5,
+        'inventory_cost': 0.05,
+        'backorder_cost': 3,
+        'ot_limit_pct': 20,
+        'inventory_policy': 0,
+        'hire_cost': 0,
+        'layoff_cost': 0,
+        'safety_stock': 0,
+    }
+
+    if config is not None:
+        defaults.update({
+            'opening_inventory': _to_float(config.opening_inventory, defaults['opening_inventory']),
+            'workers': _to_int(config.workers, defaults['workers']),
+            'productivity': _to_float(config.productivity, defaults['productivity']),
+            'regular_cost': _to_float(config.regular_cost, defaults['regular_cost']),
+            'overtime_cost': _to_float(config.overtime_cost, defaults['overtime_cost']),
+            'subcontract_cost': _to_float(config.subcontract_cost, defaults['subcontract_cost']),
+            'inventory_cost': _to_float(config.inventory_cost, defaults['inventory_cost']),
+            'backorder_cost': _to_float(config.backorder_cost, defaults['backorder_cost']),
+            'ot_limit_pct': _to_float(config.ot_limit_pct, defaults['ot_limit_pct']),
+            'inventory_policy': _to_float(config.inventory_policy, defaults['inventory_policy']),
+            'hire_cost': _to_float(config.hire_cost, defaults['hire_cost']),
+            'layoff_cost': _to_float(config.layoff_cost, defaults['layoff_cost']),
+            'safety_stock': 0,
+        })
+
+    opening_inventory = float(defaults['opening_inventory'])
+    workers = int(defaults['workers'])
+    productivity = float(defaults['productivity'])
+    regular_cost = float(defaults['regular_cost'])
+    overtime_cost = float(defaults['overtime_cost'])
+    subcontract_cost = float(defaults['subcontract_cost'])
+    inventory_cost = float(defaults['inventory_cost'])
+    backorder_cost = float(defaults['backorder_cost'])
+    ot_limit_pct = max(0.0, float(defaults['ot_limit_pct']))
+    inventory_policy = max(0.0, float(defaults['inventory_policy']))
+    hire_cost = float(defaults['hire_cost'])
+    layoff_cost = float(defaults['layoff_cost'])
+    safety_stock = max(0.0, float(defaults['safety_stock']))
+
+    demand_rows = [int(row['quantity']) for row in forecast_rows]
+    regular_caps = []
+    overtime_caps = []
+    worker_levels = []
+    worker_tracker = float(workers)
+    workforce_adjustments = [0 for _ in forecast_rows]
+
+    for idx in range(len(demand_rows)):
+        worker_tracker = max(0.0, worker_tracker + workforce_adjustments[idx])
+        worker_levels.append(worker_tracker)
+        month_regular_capacity = max(0, int(math.floor(worker_tracker * productivity + 1e-9)))
+        month_overtime_capacity = max(0, int(math.floor(month_regular_capacity * ot_limit_pct / 100.0 + 1e-9))) if overtime_cost > 0 else 0
+        regular_caps.append(month_regular_capacity)
+        overtime_caps.append(month_overtime_capacity)
+
+    alpha_ot = ot_limit_pct / 100.0
+    cost_params = {
+        'regular_cost': regular_cost,
+        'overtime_cost': overtime_cost,
+        'subcontract_cost': subcontract_cost,
+        'inventory_cost': inventory_cost,
+        'backorder_cost': backorder_cost,
+    }
+
+    feasibility_message = None
+    if ot_limit_pct <= 0:
+        alpha_ot, _ = find_best_ot_alpha(demand_rows, regular_caps, cost_params, safety_stock=safety_stock)
+        ot_limit_pct = alpha_ot * 100.0
+        overtime_caps = [max(0, int(math.floor(cap * ot_limit_pct / 100.0 + 1e-9))) for cap in regular_caps]
+
+    lp_result, status_or_cost = optimize_aggregate_plan_lp(
+        demand_rows,
+        regular_caps,
+        cost_params,
+        alpha=alpha_ot,
+        safety_stock=safety_stock,
+    )
+
+    plan_rows = []
+    total_cost = 0.0
+    alerts = []
+
+    if lp_result is None:
+        feasibility_message = f'Kế hoạch LP chưa khả thi ({status_or_cost}).'
+    else:
+        for idx, demand_qty in enumerate(demand_rows):
+            workforce_change = workforce_adjustments[idx] if idx < len(workforce_adjustments) else 0
+            lp_month = lp_result[idx]
+
+            regular_qty = int(round(lp_month['regular']))
+            overtime_qty = int(round(lp_month['overtime']))
+            subcontract_qty = int(round(lp_month['subcontract']))
+            ending_inventory = int(round(lp_month['inventory']))
+            backorder_qty = int(round(lp_month['backlog']))
+            total_production = regular_qty + overtime_qty + subcontract_qty
+            beginning_inventory = int(math.ceil(opening_inventory)) if idx == 0 else int(round(lp_result[idx - 1]['inventory']))
+            average_inventory = max(0.0, (beginning_inventory + ending_inventory) / 2.0)
+            workforce_hire_cost = max(0, workforce_change) * hire_cost
+            workforce_layoff_cost = max(0, -workforce_change) * layoff_cost
+            row_regular_cost = regular_qty * regular_cost
+            row_overtime_cost = overtime_qty * overtime_cost
+            row_subcontract_cost = subcontract_qty * subcontract_cost
+            row_inventory_cost = average_inventory * inventory_cost
+            row_backorder_cost = backorder_qty * backorder_cost
+            row_total_cost = (
+                row_regular_cost
+                + row_overtime_cost
+                + row_subcontract_cost
+                + row_inventory_cost
+                + row_backorder_cost
+                + workforce_hire_cost
+                + workforce_layoff_cost
+            )
+
+            plan_rows.append({
+                'month': str(forecast_rows[idx]['month']),
+                'forecast': demand_qty,
+                'production': total_production,
+                'ending_inventory': ending_inventory,
+                'backorder': backorder_qty,
+                'total_cost': row_total_cost,
+                'regular_cost': row_regular_cost,
+                'overtime_cost': row_overtime_cost,
+                'subcontract_cost': row_subcontract_cost,
+                'inventory_cost': row_inventory_cost,
+                'backorder_cost': row_backorder_cost,
+            })
+
+            total_cost += row_total_cost
+
+            if backorder_qty > 0:
+                alerts.append(f"⚠ Tháng {forecast_rows[idx]['month']}: Thiếu hụt trước sản xuất (-{int(backorder_qty):,})")
+
+    total_demand = sum(row['quantity'] for row in forecast_rows)
+    total_production = sum(row['production'] for row in plan_rows) if plan_rows else 0
+    shortage_periods = sum(1 for row in plan_rows if row.get('backorder', 0) > 0) if plan_rows else len(forecast_rows)
+
+    summary_cards = [
+        {
+            'label': 'Tổng nhu cầu dự báo',
+            'value': int(round(total_demand)),
+            'note': f'{horizon} kỳ Planning',
+        },
+        {
+            'label': 'Tổng sản lượng kế hoạch',
+            'value': int(round(total_production)),
+            'note': 'Từ kế hoạch LP' if plan_rows else 'Chưa chạy được LP',
+        },
+        {
+            'label': 'Số kỳ bị thiếu hàng',
+            'value': int(shortage_periods),
+            'note': 'Đếm theo backlog từng tháng',
+        },
+        {
+            'label': 'Tổng chi phí kế hoạch',
+            'value': int(round(total_cost)) if plan_rows else 0,
+            'note': 'Ước tính từ cấu hình Planning',
+        },
+    ]
+
+    chart_data = {
+        'labels': [row['month'] for row in forecast_rows],
+        'demand': [int(row['quantity']) for row in forecast_rows],
+        'production': [int(row['production']) for row in plan_rows] if plan_rows else [0 for _ in forecast_rows],
+        'shortage': [int(row['backorder']) for row in plan_rows] if plan_rows else [int(row['quantity']) for row in forecast_rows],
+    }
+
+    month_rows = []
+    for idx, row in enumerate(forecast_rows):
+        plan_row = plan_rows[idx] if idx < len(plan_rows) else {}
+        month_rows.append({
+            'month': row['month'],
+            'demand': int(row['quantity']),
+            'production': int(plan_row.get('production', 0)),
+            'shortage': int(plan_row.get('backorder', row['quantity'])),
+            'ending_inventory': int(plan_row.get('ending_inventory', 0)),
+        })
+
+    if not alerts:
+        alerts.append('✅ Không ghi nhận tháng thiếu hàng trong kế hoạch hiện tại.')
+
+    planning_source_note = 'Dữ liệu Planning riêng: forecast tháng + kế hoạch LP'
+    if config is None:
+        planning_source_note = 'Chưa có cấu hình Planning được lưu, dashboard đang dùng bộ tham số mặc định.'
+
+    return render(request, 'inventory/planning_overview.html', {
+        'title': 'Tổng quan Planning',
+        'horizon': horizon,
+        'summary_cards': summary_cards,
+        'chart_data': chart_data,
+        'month_rows': month_rows,
+        'alerts': alerts,
+        'planning_source_note': planning_source_note,
+        'forecast_mean': round(float(forecast_mean or 0), 2),
+        'forecast_std': round(float(forecast_std or 0), 2),
+        'mae': round(float(mae or 0), 2),
+        'rmse': round(float(rmse or 0), 2),
+        'mape': round(float(mape or 0), 2),
+        'feasibility_message': feasibility_message,
+    })
+
+
 
 
 @role_required(ROLE_ADMIN, ROLE_MANAGER, ROLE_STAFF)
@@ -2629,6 +3075,27 @@ def run_mps_api(request):
             'input_labels': input_labels if input_labels else month_labels,
 
         }
+
+        # Persist detailed MPS run snapshot so Planning Overview can read product-level KPIs
+        try:
+            mps_payload = {
+                'root_item_code': product_code,
+                'month_labels': month_labels,
+                'mps': lots,
+                'demand': demand,
+                'orders': orders,
+                'projected': projected,
+                'atp': atp,
+                'result_data': result_data,
+                'input_labels': input_labels if input_labels else month_labels,
+            }
+            PlanningSnapshot.objects.create(
+                snapshot_type=PlanningSnapshot.SNAPSHOT_TYPE_MPS_RUN,
+                payload=mps_payload,
+            )
+        except Exception:
+            # Don't block the API if snapshot persistence fails
+            pass
 
 
 
@@ -3458,6 +3925,77 @@ def recommendation_excel_api(request):
 
 
 
+    return response
+
+
+
+def planning_report_excel_api(request):
+    """Export a planning report workbook with forecast, aggregate, MPS, and MRP sheets."""
+    selected_sections = request.GET.getlist('section') or ['forecast', 'aggregate', 'mps', 'mrp']
+
+    agg_snapshot = PlanningSnapshot.objects.filter(
+        snapshot_type=PlanningSnapshot.SNAPSHOT_TYPE_AGGREGATE_PLAN
+    ).order_by('-created_at').first()
+    mps_snapshot = PlanningSnapshot.objects.filter(
+        snapshot_type=PlanningSnapshot.SNAPSHOT_TYPE_MPS_RUN
+    ).order_by('-created_at').first()
+
+    agg_payload = agg_snapshot.payload or {} if agg_snapshot else {}
+    mps_payload = mps_snapshot.payload or {} if mps_snapshot else {}
+
+    total_cost = int(agg_payload.get('total_cost') or 0)
+    result_data = mps_payload.get('result_data') or []
+    demand_arr = mps_payload.get('demand') or [int(r.get('demand') or 0) for r in result_data]
+    mps_arr = mps_payload.get('mps') or [int(r.get('mps') or 0) for r in result_data]
+    total_demand = sum(int(x or 0) for x in demand_arr)
+    total_mps = sum(int(x or 0) for x in mps_arr)
+
+    workbook = Workbook()
+
+    if 'forecast' in selected_sections:
+        ws = workbook.create_sheet('Bảng dự báo tổng')
+        ws.append(['Chỉ số', 'Giá trị'])
+        ws.append(['Forecast mean', agg_payload.get('forecast_mean', 0)])
+        ws.append(['Forecast std', agg_payload.get('forecast_std', 0)])
+        ws.append(['MAPE', agg_payload.get('mape', 0)])
+
+    if 'aggregate' in selected_sections:
+        ws = workbook.create_sheet('Kế hoạch tổng hợp')
+        ws.append(['Mục', 'Giá trị'])
+        ws.append(['Tổng chi phí kế hoạch', total_cost])
+        ws.append(['Tổng nhu cầu dự báo', total_demand])
+        ws.append(['Tổng sản lượng MPS', total_mps])
+        ws.append(['Horizon', agg_payload.get('horizon', mps_payload.get('horizon', 0))])
+        ws.append(['Nguồn dữ liệu', agg_payload.get('planning_source_note', 'Dữ liệu Planning riêng')])
+
+    if 'mps' in selected_sections:
+        ws = workbook.create_sheet('Bảng MPS')
+        ws.append(['Tháng', 'Nhu cầu', 'MPS', 'ATP', 'Tồn kho cuối kỳ'])
+        for row in result_data:
+            ws.append([
+                row.get('month_label') or row.get('month') or '',
+                int(row.get('demand') or 0),
+                int(row.get('mps') or 0),
+                row.get('atp') if row.get('atp') is not None else '',
+                row.get('projected_on_hand') if row.get('projected_on_hand') is not None else '',
+            ])
+
+    if 'mrp' in selected_sections:
+        ws = workbook.create_sheet('Bảng MRP')
+        ws.append(['Ghi chú', 'Chi tiết'])
+        ws.append(['Trạng thái', 'MRP sẽ được bổ sung từ module MRP hiện có'])
+        ws.append(['Nguồn dữ liệu', 'Snapshot Planning hiện tại'])
+        ws.append(['Tổng nhu cầu', total_demand])
+        ws.append(['Tổng MPS', total_mps])
+
+    if 'Sheet' in workbook.sheetnames:
+        workbook.remove(workbook['Sheet'])
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="planning_report.xlsx"'
+    workbook.save(response)
     return response
 
 

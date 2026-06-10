@@ -911,6 +911,13 @@
           </div>
           <div class="sidebar-group-body" id="group-planning">
             <a
+              href="{% url 'planning-overview' %}"
+              class="{% if request.resolver_match.url_name == 'planning-overview' %}active{% endif %}"
+            >
+              <i class="fas fa-chart-line"></i>
+              <span>Tổng quan</span>
+            </a>
+            <a
               href="{% url 'forecast_monthly' %}"
               class="{% if request.resolver_match.url_name == 'forecast_monthly' %}active{% endif %}"
             >

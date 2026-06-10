@@ -115,11 +115,13 @@ class PlanningItem(models.Model):
     LOT_POLICY_L4L = "L4L"
     LOT_POLICY_FOQ = "FOQ"
     LOT_POLICY_PPA = "PPA"
+    LOT_POLICY_EOQ = "EOQ"
 
     LOT_POLICY_CHOICES = (
         (LOT_POLICY_L4L, "Lot-for-Lot"),
         (LOT_POLICY_FOQ, "Fixed Order Quantity"),
         (LOT_POLICY_PPA, "PPA"),
+        (LOT_POLICY_EOQ, "EOQ"),
     )
 
     item_code = models.CharField(max_length=64, unique=True, db_index=True)
@@ -251,6 +253,26 @@ class PlanningConfiguration(models.Model):
 
     def __str__(self):
         return f"Planning Config - {self.updated_at:%Y-%m-%d %H:%M}"
+
+
+class PlanningSnapshot(models.Model):
+    SNAPSHOT_TYPE_AGGREGATE_PLAN = 'aggregate_plan'
+    SNAPSHOT_TYPE_MPS_RUN = 'mps_run'
+    SNAPSHOT_TYPE_CHOICES = (
+        (SNAPSHOT_TYPE_AGGREGATE_PLAN, 'Aggregate plan'),
+        (SNAPSHOT_TYPE_MPS_RUN, 'MPS run'),
+    )
+
+    snapshot_type = models.CharField(max_length=32, choices=SNAPSHOT_TYPE_CHOICES, db_index=True)
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"PlanningSnapshot - {self.snapshot_type} - {self.created_at:%Y-%m-%d %H:%M}"
 
 
 # =========================

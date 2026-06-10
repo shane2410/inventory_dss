@@ -1,0 +1,468 @@
+{% extends "inventory/base.html" %}
+{% load humanize %}
+{% block extra_styles %}
+<style>
+  .planning-overview {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .overview-hero {
+    grid-column: 1 / -1;
+    padding: 24px 26px;
+    border-radius: 22px;
+    background: linear-gradient(135deg, #173b4d 0%, #245164 45%, #4e8ca1 100%);
+    color: #fff;
+    box-shadow: 0 18px 38px rgba(16, 33, 45, 0.16);
+  }
+
+  .overview-hero h1 {
+    margin: 0 0 8px;
+    font-size: 32px;
+    line-height: 1.08;
+    font-weight: 800;
+  }
+
+  .overview-hero p {
+    margin: 0;
+    max-width: 980px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .overview-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+
+  .meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .overview-panel {
+    grid-column: span 12;
+    padding: 18px;
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 10px 24px rgba(17, 39, 52, 0.08);
+  }
+
+  .insight-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+
+  .overview-panel.note-panel,
+  .overview-panel.forecast-panel {
+    grid-column: auto;
+    min-width: 0;
+  }
+
+  .overview-panel h2 {
+    margin: 0 0 12px;
+    font-size: 18px;
+    color: #173b4d;
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .summary-card {
+    padding: 18px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, #fbfdfe 0%, #f3f8fb 100%);
+    border: 1px solid #dce8ee;
+    min-height: 122px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .summary-card .label {
+    display: block;
+    color: #5b7280;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 12px;
+  }
+
+  .summary-card .value {
+    font-size: 28px;
+    font-weight: 800;
+    color: #173b4d;
+    line-height: 1;
+    margin-top: 2px;
+  }
+
+  .summary-card .note {
+    font-size: 13px;
+    color: #5e7380;
+    line-height: 1.45;
+    min-height: 18px;
+  }
+
+  .report-export-form {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #e0ebef;
+  }
+
+  .report-option-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .report-option-grid label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #355566;
+  }
+
+  .export-button {
+    border: 0;
+    border-radius: 10px;
+    padding: 8px 12px;
+    background: #173b4d;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.9fr);
+    gap: 16px;
+  }
+
+  .chart-shell {
+    position: relative;
+    min-height: 400px;
+    padding: 4px;
+  }
+
+  .chart-shell canvas {
+    width: 100% !important;
+    height: 360px !important;
+  }
+
+  .alert-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .alert-item {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #f8fbfc;
+    border: 1px solid #d9e6ec;
+    color: #294655;
+    line-height: 1.5;
+  }
+
+  .alert-item.warn {
+    background: #fff8f1;
+    border-color: #f4d1b0;
+    color: #8a4b00;
+  }
+
+  .alert-item.good {
+    background: #eefaf1;
+    border-color: #cce9d6;
+    color: #166534;
+  }
+
+  .month-table-wrap {
+    overflow-x: auto;
+  }
+
+  .month-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 760px;
+  }
+
+  .month-table th,
+  .month-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #e5ecf0;
+    white-space: nowrap;
+  }
+
+  .month-table thead th {
+    background: #173b4d;
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .month-table tbody tr:nth-child(even) td {
+    background: #f9fbfd;
+  }
+
+  .compact-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .compact-card {
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: #f8fbfc;
+    border: 1px solid #d9e6ec;
+  }
+
+  .compact-card .kicker {
+    display: block;
+    margin-bottom: 6px;
+    color: #5b7280;
+    font-size: 12px;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  .compact-card .detail {
+    color: #173b4d;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .planning-note {
+    margin-top: 10px;
+    color: #5e7380;
+    line-height: 1.6;
+  }
+
+  .feasibility-box {
+    grid-column: 1 / -1;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid #f1c3c0;
+    background: #fff4f3;
+    color: #8f1d1d;
+    font-weight: 700;
+  }
+
+  @media (max-width: 1100px) {
+    .summary-grid,
+    .compact-grid,
+    .two-col {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .insight-row {
+      grid-template-columns: 1fr;
+    }
+
+    .overview-panel.note-panel,
+    .overview-panel.forecast-panel {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .summary-grid,
+    .compact-grid,
+    .two-col {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{{ chart_data|json_script:"planning-overview-chart-data" }}
+<div class="planning-overview">
+  <div class="overview-hero">
+    <h1>Tổng quan</h1>
+    <p>Theo dõi nhanh các KPI trước khi đi sâu vào hoạch định chi tiết.</p>
+  </div>
+
+  {% if feasibility_message %}
+  <div class="feasibility-box">{{ feasibility_message }}</div>
+  {% endif %}
+
+  <div class="overview-panel">
+    <h2>KPI Cards</h2>
+    <div class="summary-grid">
+      {% for card in summary_cards %}
+      <div class="summary-card">
+        <span class="label">{{ card.label }}</span>
+        <div class="value">{{ card.value|intcomma }}</div>
+        {% if card.note %}
+        <div class="note">{{ card.note }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="overview-panel">
+    <h2>Demand vs MPS</h2>
+    <div class="two-col">
+      <div class="chart-shell">
+        <canvas id="planningOverviewChart"></canvas>
+      </div>
+      <div class="alert-list">
+        <div class="compact-grid" style="grid-template-columns: 1fr;">
+          <div class="compact-card">
+            <span class="kicker">Cảnh báo MPS</span>
+            <div class="detail">
+              {% if alerts %}
+                {% for alert in alerts %}
+                <div style="margin-bottom:8px;">{{ alert }}</div>
+                {% endfor %}
+              {% else %}
+                Không có cảnh báo từ snapshot MPS gần nhất.
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="insight-row">
+    <div class="overview-panel note-panel">
+      <h2>Ghi chú</h2>
+      <div class="compact-card">
+        <div class="detail">
+          {% if overview_insights %}
+            <ul style="margin:0; padding-left:18px; display:grid; gap:6px;">
+              {% for insight in overview_insights %}
+              <li>{{ insight }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            Không có nhận xét từ snapshot MPS gần nhất.
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="overview-panel forecast-panel">
+      <h2>Chỉ số dự báo</h2>
+      <div class="compact-grid">
+        <div class="compact-card">
+          <span class="kicker">Forecast mean</span>
+          <div class="detail">{{ forecast_mean|floatformat:2|intcomma }}</div>
+        </div>
+        <div class="compact-card">
+          <span class="kicker">Forecast std</span>
+          <div class="detail">{{ forecast_std|floatformat:2|intcomma }}</div>
+        </div>
+        <div class="compact-card">
+          <span class="kicker">MAPE</span>
+          <div class="detail">{{ mape|floatformat:2 }}%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6"></script>
+<script>
+  (function() {
+    const chartDataElement = document.getElementById('planning-overview-chart-data');
+    const chartData = JSON.parse(chartDataElement.textContent);
+    const ctx = document.getElementById('planningOverviewChart').getContext('2d');
+    const currencyFormatter = new Intl.NumberFormat('vi-VN');
+
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: chartData.labels,
+        datasets: [
+          {
+            label: 'Nhu cầu dự báo',
+            type: 'line',
+            data: chartData.demand,
+            borderColor: '#4e8ca1',
+            backgroundColor: 'rgba(78, 140, 161, 0.12)',
+            pointRadius: 5,
+            pointHoverRadius: 7,
+            tension: 0.28,
+            fill: true,
+          },
+          {
+            label: 'Sản lượng kế hoạch',
+            type: 'bar',
+            data: chartData.production,
+            borderColor: '#173b4d',
+            backgroundColor: 'rgba(23, 59, 77, 0.22)',
+            borderWidth: 1,
+            borderRadius: 6,
+            barThickness: 30,
+            maxBarThickness: 40,
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              usePointStyle: true,
+              boxWidth: 10,
+              color: '#294655',
+              font: { weight: '700' }
+            }
+          },
+          tooltip: {
+            intersect: false,
+            mode: 'index',
+            callbacks: {
+              label: function(context) {
+                return `${context.dataset.label}: ${currencyFormatter.format(context.parsed.y || 0)}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(23, 59, 77, 0.06)' },
+            ticks: { color: '#5c7280' }
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: 'rgba(23, 59, 77, 0.08)' },
+            ticks: {
+              color: '#5c7280',
+              callback: function(value) { return currencyFormatter.format(value); }
+            }
+          }
+        }
+      }
+    });
+  })();
+</script>
+{% endblock %}
